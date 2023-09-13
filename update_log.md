@@ -1,3 +1,37 @@
+### 2.0.0
+
+* V2 released.
+* completely rewrite text processing pipeline (higher image quality and prompt understanding).
+* support multi-style.
+* In 100 tests (prompts written by ChatGPT), V2 default results outperform V1 default results in 87 cases, evaluated by two human.
+* In 100 tests (prompts written by ChatGPT), V2 prompt understanding outperform V1 prompt understanding in 81 cases, evaluated by two human, in both default setting and multi/single style mode.
+* Because the above number is above 80%, we view this as a major update and directly jump to 2.0.0.
+* Some other things are renamed.
+
+### 1.0.67
+
+* Use dynamic weighting and lower weights for prompt expansion.
+
+### 1.0.64
+
+* Fixed a small OOM problem.
+
+### 1.0.62
+
+* Change prompt expansion to suffix mode for better balance of semantic and style (and debugging).
+
+### 1.0.60
+
+* Tune the balance between style and Prompt Expansion.
+
+### 1.0.56
+
+* Begin to use magic split.
+
+### 1.0.55
+
+* Minor changes of Prompt Expansion.
+
 ### 1.0.52
 
 * Reduce the semantic corruption of Prompt Expansion.
