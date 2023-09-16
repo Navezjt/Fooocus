@@ -1,4 +1,7 @@
 import os
+os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+
+
 import sys
 import platform
 import fooocus_version
@@ -6,7 +9,7 @@ import fooocus_version
 from modules.launch_util import is_installed, run, python, \
     run_pip, repo_dir, git_clone, requirements_met, script_path, dir_repos
 from modules.model_loader import load_file_from_url
-from modules.path import modelfile_path, lorafile_path, vae_approx_path, fooocus_expansion_path
+from modules.path import modelfile_path, lorafile_path, vae_approx_path, fooocus_expansion_path, upscale_models_path
 
 REINSTALL_ALL = False
 
@@ -64,8 +67,14 @@ lora_filenames = [
 ]
 
 vae_approx_filenames = [
-    ('taesdxl_decoder.pth',
-     'https://huggingface.co/lllyasviel/misc/resolve/main/taesdxl_decoder.pth')
+    ('xlvaeapp.pth',
+     'https://huggingface.co/lllyasviel/misc/resolve/main/xlvaeapp.pth')
+]
+
+
+upscaler_filenames = [
+    ('fooocus_upscaler_s409985e5.bin',
+     'https://huggingface.co/lllyasviel/misc/resolve/main/fooocus_upscaler_s409985e5.bin')
 ]
 
 
@@ -76,6 +85,8 @@ def download_models():
         load_file_from_url(url=url, model_dir=lorafile_path, file_name=file_name)
     for file_name, url in vae_approx_filenames:
         load_file_from_url(url=url, model_dir=vae_approx_path, file_name=file_name)
+    for file_name, url in upscaler_filenames:
+        load_file_from_url(url=url, model_dir=upscale_models_path, file_name=file_name)
 
     load_file_from_url(
         url='https://huggingface.co/lllyasviel/misc/resolve/main/fooocus_expansion.bin',
@@ -89,7 +100,8 @@ def download_models():
 def clear_comfy_args():
     argv = sys.argv
     sys.argv = [sys.argv[0]]
-    import comfy.cli_args
+    from comfy.cli_args import args as comfy_args
+    comfy_args.disable_cuda_malloc = True
     sys.argv = argv
 
 

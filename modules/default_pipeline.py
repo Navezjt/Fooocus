@@ -2,6 +2,7 @@ import modules.core as core
 import os
 import torch
 import modules.path
+import modules.virtual_memory as virtual_memory
 
 from comfy.model_base import SDXL, SDXLRefiner
 from modules.patch import cfg_patched
@@ -18,12 +19,16 @@ xl_base_patched: core.StableDiffusionModel = None
 xl_base_patched_hash = ''
 
 
+@torch.no_grad()
+@torch.inference_mode()
 def refresh_base_model(name):
     global xl_base, xl_base_hash, xl_base_patched, xl_base_patched_hash
-    if xl_base_hash == str(name):
-        return
 
-    filename = os.path.join(modules.path.modelfile_path, name)
+    filename = os.path.abspath(os.path.realpath(os.path.join(modules.path.modelfile_path, name)))
+    model_hash = filename
+
+    if xl_base_hash == model_hash:
+        return
 
     if xl_base is not None:
         xl_base.to_meta()
@@ -35,21 +40,27 @@ def refresh_base_model(name):
         xl_base = None
         xl_base_hash = ''
         refresh_base_model(modules.path.default_base_model_name)
-        xl_base_hash = name
+        xl_base_hash = model_hash
         xl_base_patched = xl_base
         xl_base_patched_hash = ''
         return
 
-    xl_base_hash = name
+    xl_base_hash = model_hash
     xl_base_patched = xl_base
     xl_base_patched_hash = ''
-    print(f'Base model loaded: {xl_base_hash}')
+    print(f'Base model loaded: {model_hash}')
     return
 
 
+@torch.no_grad()
+@torch.inference_mode()
 def refresh_refiner_model(name):
     global xl_refiner, xl_refiner_hash
-    if xl_refiner_hash == str(name):
+
+    filename = os.path.abspath(os.path.realpath(os.path.join(modules.path.modelfile_path, name)))
+    model_hash = filename
+
+    if xl_refiner_hash == model_hash:
         return
 
     if name == 'None':
@@ -57,8 +68,6 @@ def refresh_refiner_model(name):
         xl_refiner_hash = ''
         print(f'Refiner unloaded.')
         return
-
-    filename = os.path.join(modules.path.modelfile_path, name)
 
     if xl_refiner is not None:
         xl_refiner.to_meta()
@@ -72,14 +81,16 @@ def refresh_refiner_model(name):
         print(f'Refiner unloaded.')
         return
 
-    xl_refiner_hash = name
-    print(f'Refiner model loaded: {xl_refiner_hash}')
+    xl_refiner_hash = model_hash
+    print(f'Refiner model loaded: {model_hash}')
 
     xl_refiner.vae.first_stage_model.to('meta')
     xl_refiner.vae = None
     return
 
 
+@torch.no_grad()
+@torch.inference_mode()
 def refresh_loras(loras):
     global xl_base, xl_base_patched, xl_base_patched_hash
     if xl_base_patched_hash == str(loras):
@@ -99,14 +110,8 @@ def refresh_loras(loras):
     return
 
 
-refresh_base_model(modules.path.default_base_model_name)
-refresh_refiner_model(modules.path.default_refiner_model_name)
-refresh_loras([(modules.path.default_lora_name, 0.5), ('None', 0.5), ('None', 0.5), ('None', 0.5), ('None', 0.5)])
-
-expansion = FooocusExpansion()
-
-
 @torch.no_grad()
+@torch.inference_mode()
 def clip_encode_single(clip, text, verbose=False):
     cached = clip.fcs_cond_cache.get(text, None)
     if cached is not None:
@@ -122,6 +127,7 @@ def clip_encode_single(clip, text, verbose=False):
 
 
 @torch.no_grad()
+@torch.inference_mode()
 def clip_encode(sd, texts, pool_top_k=1):
     if sd is None:
         return None
@@ -146,6 +152,7 @@ def clip_encode(sd, texts, pool_top_k=1):
 
 
 @torch.no_grad()
+@torch.inference_mode()
 def clear_sd_cond_cache(sd):
     if sd is None:
         return None
@@ -156,23 +163,65 @@ def clear_sd_cond_cache(sd):
 
 
 @torch.no_grad()
+@torch.inference_mode()
 def clear_all_caches():
     clear_sd_cond_cache(xl_base_patched)
     clear_sd_cond_cache(xl_refiner)
 
 
 @torch.no_grad()
-def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback):
-    if xl_base is not None:
-        xl_base.unet.model_options['sampler_cfg_function'] = cfg_patched
+@torch.inference_mode()
+def refresh_everything(refiner_model_name, base_model_name, loras):
+    refresh_refiner_model(refiner_model_name)
+    if xl_refiner is not None:
+        virtual_memory.try_move_to_virtual_memory(xl_refiner.unet.model)
+        virtual_memory.try_move_to_virtual_memory(xl_refiner.clip.cond_stage_model)
 
-    if xl_base_patched is not None:
-        xl_base_patched.unet.model_options['sampler_cfg_function'] = cfg_patched
+    refresh_base_model(base_model_name)
+    virtual_memory.load_from_virtual_memory(xl_base.unet.model)
+
+    refresh_loras(loras)
+    clear_all_caches()
+    return
+
+
+refresh_everything(
+    refiner_model_name=modules.path.default_refiner_model_name,
+    base_model_name=modules.path.default_base_model_name,
+    loras=[(modules.path.default_lora_name, 0.5), ('None', 0.5), ('None', 0.5), ('None', 0.5), ('None', 0.5)]
+)
+
+expansion = FooocusExpansion()
+
+
+@torch.no_grad()
+@torch.inference_mode()
+def patch_all_models():
+    assert xl_base is not None
+    assert xl_base_patched is not None
+
+    xl_base.unet.model_options['sampler_cfg_function'] = cfg_patched
+    xl_base_patched.unet.model_options['sampler_cfg_function'] = cfg_patched
 
     if xl_refiner is not None:
         xl_refiner.unet.model_options['sampler_cfg_function'] = cfg_patched
 
-    empty_latent = core.generate_empty_latent(width=width, height=height, batch_size=1)
+    return
+
+
+@torch.no_grad()
+@torch.inference_mode()
+def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, latent=None, denoise=1.0, tiled=False):
+    patch_all_models()
+
+    if xl_refiner is not None:
+        virtual_memory.try_move_to_virtual_memory(xl_refiner.unet.model)
+    virtual_memory.load_from_virtual_memory(xl_base.unet.model)
+
+    if latent is None:
+        empty_latent = core.generate_empty_latent(width=width, height=height, batch_size=1)
+    else:
+        empty_latent = latent
 
     if xl_refiner is not None:
         sampled_latent = core.ksampler_with_refiner(
@@ -186,6 +235,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             latent=empty_latent,
             steps=steps, start_step=0, last_step=steps, disable_noise=False, force_full_denoise=True,
             seed=image_seed,
+            denoise=denoise,
             callback_function=callback
         )
     else:
@@ -196,9 +246,10 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             latent=empty_latent,
             steps=steps, start_step=0, last_step=steps, disable_noise=False, force_full_denoise=True,
             seed=image_seed,
+            denoise=denoise,
             callback_function=callback
         )
 
-    decoded_latent = core.decode_vae(vae=xl_base_patched.vae, latent_image=sampled_latent)
-    images = core.image_to_numpy(decoded_latent)
+    decoded_latent = core.decode_vae(vae=xl_base_patched.vae, latent_image=sampled_latent, tiled=tiled)
+    images = core.pytorch_to_numpy(decoded_latent)
     return images
