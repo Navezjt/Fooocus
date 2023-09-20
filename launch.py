@@ -1,7 +1,6 @@
 import os
 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
-
 import sys
 import platform
 import fooocus_version
@@ -12,7 +11,6 @@ from modules.model_loader import load_file_from_url
 from modules.path import modelfile_path, lorafile_path, vae_approx_path, fooocus_expansion_path, upscale_models_path
 
 REINSTALL_ALL = False
-
 
 def prepare_environment():
     torch_index_url = os.environ.get('TORCH_INDEX_URL', "https://download.pytorch.org/whl/cu118")
