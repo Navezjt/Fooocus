@@ -112,8 +112,8 @@ with shared.gradio_root:
 
         with gr.Column(scale=0.5, visible=False) as right_col:
             with gr.Tab(label='Setting'):
-                performance_selction = gr.Radio(label='Performance', choices=['Speed', 'Quality'], value='Speed')
-                aspect_ratios_selction = gr.Radio(label='Aspect Ratios', choices=list(aspect_ratios.keys()),
+                performance_selection = gr.Radio(label='Performance', choices=['Speed', 'Quality'], value='Speed')
+                aspect_ratios_selection = gr.Radio(label='Aspect Ratios', choices=list(aspect_ratios.keys()),
                                                   value='1152×896', info='width × height')
                 image_number = gr.Slider(label='Image Number', minimum=1, maximum=32, step=1, value=2)
                 negative_prompt = gr.Textbox(label='Negative Prompt', show_label=True, placeholder="Type prompt here.",
@@ -137,7 +137,7 @@ with shared.gradio_root:
                                                     choices=[fooocus_expansion] + style_keys,
                                                     value=[fooocus_expansion] + default_styles,
                                                     label='Image Style')
-            with gr.Tab(label='Advanced'):
+            with gr.Tab(label='Model'):
                 with gr.Row():
                     base_model = gr.Dropdown(label='SDXL Base Model', choices=modules.path.model_filenames, value=modules.path.default_base_model_name, show_label=True)
                     refiner_model = gr.Dropdown(label='SDXL Refiner', choices=['None'] + modules.path.model_filenames, value=modules.path.default_refiner_model_name, show_label=True)
@@ -150,9 +150,56 @@ with shared.gradio_root:
                             lora_ctrls += [lora_model, lora_weight]
                 with gr.Row():
                     model_refresh = gr.Button(label='Refresh', value='\U0001f504 Refresh All Files', variant='secondary', elem_classes='refresh_button')
-                with gr.Accordion(label='Advanced', open=False):
-                    sharpness = gr.Slider(label='Sampling Sharpness', minimum=0.0, maximum=30.0, step=0.01, value=2.0)
-                    gr.HTML('<a href="https://github.com/lllyasviel/Fooocus/discussions/117">\U0001F4D4 Document</a>')
+            with gr.Tab(label='Advanced'):
+                sharpness = gr.Slider(label='Sampling Sharpness', minimum=0.0, maximum=30.0, step=0.001, value=2.0,
+                                      info='Higher value means image and texture are sharper.')
+                guidance_scale = gr.Slider(label='Guidance Scale', minimum=1.0, maximum=30.0, step=0.01, value=7.0,
+                                      info='Higher value means style is cleaner, vivider, and more artistic.')
+
+                gr.HTML('<a href="https://github.com/lllyasviel/Fooocus/discussions/117">\U0001F4D4 Document</a>')
+                dev_mode = gr.Checkbox(label='Developer Debug Mode', value=False, container=False)
+
+                with gr.Column(visible=False) as dev_tools:
+                    with gr.Tab(label='Developer Control and Debug Tools'):
+                        adm_scaler_positive = gr.Slider(label='Positive ADM Guidance Scaler', minimum=0.1, maximum=3.0,
+                                                        step=0.001, value=1.5, info='The scaler multiplied to positive ADM (use 1.0 to disable). ')
+                        adm_scaler_negative = gr.Slider(label='Negative ADM Guidance Scaler', minimum=0.1, maximum=3.0,
+                                                        step=0.001, value=0.8, info='The scaler multiplied to negative ADM (use 1.0 to disable). ')
+                        adm_scaler_end = gr.Slider(label='ADM Guidance End At Step', minimum=0.0, maximum=1.0,
+                                                   step=0.001, value=0.3,
+                                                   info='When to end the guidance from positive/negative ADM. ')
+                        adaptive_cfg = gr.Slider(label='CFG Mimicking from TSNR', minimum=1.0, maximum=30.0, step=0.01, value=7.0,
+                                                 info='Enabling Fooocus\'s implementation of CFG mimicking for TSNR '
+                                                      '(effective when real CFG > mimicked CFG).')
+                        sampler_name = gr.Dropdown(label='Sampler', choices=flags.sampler_list, value=flags.default_sampler, info='Only effective in non-inpaint mode.')
+                        scheduler_name = gr.Dropdown(label='Scheduler', choices=flags.scheduler_list, value=flags.default_scheduler, info='Scheduler of Sampler.')
+
+                        overwrite_step = gr.Slider(label='Forced Overwrite of Sampling Step',
+                                                   minimum=-1, maximum=200, step=1, value=-1,
+                                                   info='Set as -1 to disable. For developer debugging.')
+                        overwrite_switch = gr.Slider(label='Forced Overwrite of Refiner Switch Step',
+                                                     minimum=-1, maximum=200, step=1, value=-1,
+                                                     info='Set as -1 to disable. For developer debugging.')
+                        overwrite_width = gr.Slider(label='Forced Overwrite of Generating Width',
+                                                    minimum=-1, maximum=2048, step=1, value=-1,
+                                                    info='Set as -1 to disable. For developer debugging.')
+                        overwrite_height = gr.Slider(label='Forced Overwrite of Generating Height',
+                                                     minimum=-1, maximum=2048, step=1, value=-1,
+                                                     info='Set as -1 to disable. For developer debugging.')
+                        overwrite_vary_strength = gr.Slider(label='Forced Overwrite of Denoising Strength of "Vary"',
+                                                            minimum=-1, maximum=1.0, step=0.001, value=-1,
+                                                            info='Set as negative number to disable. For developer debugging.')
+                        overwrite_upscale_strength = gr.Slider(label='Forced Overwrite of Denoising Strength of "Upscale"',
+                                                               minimum=-1, maximum=1.0, step=0.001, value=-1,
+                                                               info='Set as negative number to disable. For developer debugging.')
+
+                        overwrite_ctrls = [overwrite_step, overwrite_switch, overwrite_width, overwrite_height, overwrite_vary_strength, overwrite_upscale_strength]
+
+                def dev_mode_checked(r):
+                    return gr.update(visible=r)
+
+
+                dev_mode.change(dev_mode_checked, inputs=[dev_mode], outputs=[dev_tools], queue=False)
 
                 def model_refresh_clicked():
                     modules.path.update_all_model_names()
@@ -167,8 +214,9 @@ with shared.gradio_root:
         advanced_checkbox.change(lambda x: gr.update(visible=x), advanced_checkbox, right_col, queue=False)
         ctrls = [
             prompt, negative_prompt, style_selections,
-            performance_selction, aspect_ratios_selction, image_number, image_seed, sharpness
+            performance_selection, aspect_ratios_selection, image_number, image_seed, sharpness, adm_scaler_positive, adm_scaler_negative, adm_scaler_end, guidance_scale, adaptive_cfg, sampler_name, scheduler_name
         ]
+        ctrls += overwrite_ctrls
         ctrls += [base_model, refiner_model] + lora_ctrls
         ctrls += [input_image_checkbox, current_tab]
         ctrls += [uov_method, uov_input_image]
