@@ -18,13 +18,44 @@ Fooocus also developed many "fooocus-only" features for advanced users to get pe
 
 `[1]` David Holz, 2019.
 
-## Download
+## [Installing Fooocus](#download)
+
+# Moving from Midjourney to Fooocus
+
+Using Fooocus is as easy as (probably easier than) Midjourney – but this does not mean we lack functionality. Below are the details.
+
+| Midjourney | Fooocus |
+| - | - |
+| High-quality text-to-image without needing much prompt engineering or parameter tuning. <br> (Unknown method) | High-quality text-to-image without needing much prompt engineering or parameter tuning. <br> (Fooocus has offline GPT-2 based prompt processing engine and lots of sampling improvements so that results are always beautiful, no matter your prompt is as short as “house in garden” or as long as 1000 words) |
+| V1 V2 V3 V4 | Input Image -> Upscale or Variation -> Vary (Subtle) / Vary (Strong)|
+| U1 U2 U3 U4 | Input Image -> Upscale or Variation -> Upscale (1.5x) / Upscale (2x) |
+| Inpaint / Up / Down / Left / Right (Pan) | Input Image -> Inpaint or Outpaint -> Inpaint / Up / Down / Left / Right <br> (Fooocus uses its own inpaint algorithm and inpaint models so that results are more satisfying than all other software that uses standard SDXL inpaint method/model) |
+| Image Prompt | Input Image -> Image Prompt <br> (Fooocus uses its own image prompt algorithm so that result quality and prompt understanding are more satisfying than all other software that uses standard SDXL methods like standard IP-Adapters or Revisions) |
+| --style | Advanced -> Style |
+| --stylize | Advanced -> Advanced -> Guidance |
+| --niji | Fooocus support SDXL models on Civitai <br> (You can google search “Civitai” if you do not know about it) |
+| --quality | Advanced -> Quality |
+| --repeat | Advanced -> Image Number |
+| Multi Prompts (::) | Just use multiple lines of prompts |
+| Prompt Weights | You can use " I am (happy:1.5)". <br> Fooocus uses A1111's reweighting algorithm so that results are better than ComfyUI if users directly copy prompts from Civitai. (Because if prompts are written in ComfyUI's reweighting, users are less likely to copy prompt texts as they prefer dragging files) |
+| --no | Advanced -> Negative Prompt |
+| --ar | Advanced -> Aspect Ratios |
+
+We also have a few things borrowed from the best parts of LeonardoAI:
+
+| LeonardoAI | Fooocus |
+| - | - |
+| Prompt Magic | Advanced -> Style -> Fooocus V2 |
+| Advanced Sampler Parameters (like Contrast/Sharpness/etc) | Advanced -> Advanced -> Sampling Sharpness / etc |
+| User-friendly ControlNets | Input Image -> Image Prompt -> Advanced |
+
+# Download
 
 ### Windows
 
 You can directly download Fooocus with:
 
-**[>>> Click here to download <<<](https://github.com/lllyasviel/Fooocus/releases/download/release/Fooocus_win64_2-0-50.7z)**
+**[>>> Click here to download <<<](https://github.com/lllyasviel/Fooocus/releases/download/release/Fooocus_win64_2-1-25.7z)**
 
 After you download the file, please uncompress it, and then run the "run.bat".
 
@@ -40,7 +71,7 @@ In the first time you launch the software, it will automatically download models
 
 If you already have these files, you can copy them to the above locations to speed up installation.
 
-Note that if you see **"MetadataIncompleteBuffer"**, then your model files are corrupted. Please download models again.
+Note that if you see **"MetadataIncompleteBuffer" or "PytorchStreamReader"**, then your model files are corrupted. Please download models again.
 
 Below is a test on a relatively low-end laptop with **16GB System RAM** and **6GB VRAM** (Nvidia 3060 laptop). The speed on this machine is about 1.35 seconds per iteration. Pretty impressive – nowadays laptops with 3060 are usually at very acceptable price.
 
@@ -131,7 +162,7 @@ Or if you want to open a remote port, use
 
 ### Linux (AMD GPUs)
 
-Coming soon ...
+Same with the above instructions. Not intensively tested, however.
 
 ### Mac/Windows(AMD GPUs)
 
