@@ -1,3 +1,15 @@
+# 2.1.52
+
+* removed pygit2 dependency (expect auto update) so that people will never have permission denied problems.
+
+# 2.1.50
+
+* Begin to support sd1.5 as refiner. This method scale sigmas given SD15/Xl latent scale and is probably the most correct way to do it. I am going to write a discussion soon.
+
+# 2.1.25
+
+AMD support on Linux and Windows.
+
 # 2.1.0
 
 * Image Prompt

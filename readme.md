@@ -94,13 +94,13 @@ Please open an issue if you use similar devices but still cannot achieve accepta
 
 ### Colab
 
-(Last tested - 2023 Sep 13)
+(Last tested - 2023 Oct 10)
 
 | Colab | Info
 | --- | --- |
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lllyasviel/Fooocus/blob/colab/colab.ipynb) | Fooocus Colab Version
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lllyasviel/Fooocus/blob/main/fooocus_colab.ipynb) | Fooocus Official
 
-Note that this link is optimized for Google Colab - the codes may be different from offline Fooocus for better Colab experience.
+Note that this Colab will disable refiner by default because Colab free's resource is relatively limited. 
 
 Thanks to [camenduru](https://github.com/camenduru)!
 
@@ -162,11 +162,40 @@ Or if you want to open a remote port, use
 
 ### Linux (AMD GPUs)
 
-Same with the above instructions. Not intensively tested, however.
+Same with the above instructions. You need to change torch to AMD version
 
-### Mac/Windows(AMD GPUs)
+    pip uninstall torch torchvision torchaudio torchtext functorch xformers 
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm5.6
 
-Coming soon ...
+AMD is not intensively tested, however. The AMD support is in beta.
+
+### Windows(AMD GPUs)
+
+Same with Windows. Download the software, edit the content of `run.bat` as:
+
+    .\python_embeded\python.exe -m pip uninstall torch torchvision torchaudio torchtext functorch xformers -y
+    .\python_embeded\python.exe -m pip install torch-directml
+    .\python_embeded\python.exe -s Fooocus\entry_with_update.py --directml
+    pause
+
+Then run the `run.bat`.
+
+AMD is not intensively tested, however. The AMD support is in beta.
+
+### Mac
+
+Mac is not intensively tested. Below is an unofficial guideline for using Mac. You can discuss problems [here](https://github.com/lllyasviel/Fooocus/pull/129).
+
+You can install Fooocus on Apple Mac silicon (M1 or M2) with macOS 'Catalina' or a newer version. Fooocus runs on Apple silicon computers via [PyTorch](https://pytorch.org/get-started/locally/) MPS device acceleration. Mac Silicon computers don't come with a dedicated graphics card, resulting in significantly longer image processing times compared to computers with dedicated graphics cards.
+
+1. Install the conda package manager and pytorch nightly. Read the [Accelerated PyTorch training on Mac](https://developer.apple.com/metal/pytorch/) Apple Developer guide for instructions. Make sure pytorch recognizes your MPS device.
+1. Open the macOS Terminal app and clone this repository with `git clone https://github.com/lllyasviel/Fooocus.git`.
+1. Change to the new Fooocus directory, `cd Fooocus`.
+1. Create a new conda environment, `conda env create -f environment.yaml`.
+1. Activate your new conda environment, `conda activate fooocus`.
+1. Install the pygit2, `pip install pygit2==1.12.2`.
+1. Install the packages required by Fooocus, `pip install -r requirements_versions.txt`.
+1. Launch Fooocus by running `python entry_with_update.py`. The first time you run Fooocus, it will automatically download the Stable Diffusion SDXL models and will take a significant time, depending on your internet connection.
 
 ## List of "Hidden" Tricks
 <a name="tech_list"></a>
@@ -188,9 +217,69 @@ Below things are already inside the software, and **users do not need to do anyt
 13. The joint swap system of refiner now also support img2img and upscale in a seamless way.
 14. CFG Scale and TSNR correction (tuned for SDXL) when CFG is bigger than 10.
 
-## Changing Model Path
+## Customization
 
-After the first time you run Fooocus, a config file will be generated at `Fooocus\user_path_config.txt`. This file can be edited for changing the model path.
+After the first time you run Fooocus, a config file will be generated at `Fooocus\user_path_config.txt`. This file can be edited for changing the model path. You can also change some parameters to turn Fooocus into "your Fooocus".
+
+For example ["realisticStockPhoto_v10" is a pretty good model from CivitAI](https://civitai.com/models/139565/realistic-stock-photo). This model needs a special `CFG=3.0` and probably works better with some specific styles. Below is an example config to turn Fooocus into a **"Fooocus Realistic Stock Photo Software"**:
+
+`Fooocus\user_path_config.txt`:
+
+```json
+{
+    "modelfile_path": "D:\\Fooocus\\models\\checkpoints",
+    "lorafile_path": "D:\\Fooocus\\models\\loras",
+    "vae_approx_path": "D:\\Fooocus\\models\\vae_approx",
+    "upscale_models_path": "D:\\Fooocus\\models\\upscale_models",
+    "inpaint_models_path": "D:\\Fooocus\\models\\inpaint",
+    "controlnet_models_path": "D:\\Fooocus\\models\\controlnet",
+    "clip_vision_models_path": "D:\\Fooocus\\models\\clip_vision",
+    "fooocus_expansion_path": "D:\\Fooocus\\models\\prompt_expansion\\fooocus_expansion",
+    "temp_outputs_path": "D:\\Fooocus\\outputs",
+    "default_model": "realisticStockPhoto_v10.safetensors",
+    "default_refiner": "",
+    "default_lora": "",
+    "default_lora_weight": 0.25,
+    "default_cfg_scale": 3.0,
+    "default_sampler": "dpmpp_2m",
+    "default_scheduler": "karras",
+    "default_styles": [
+        "Fooocus V2",
+        "Default (Slightly Cinematic)",
+        "SAI Photographic"
+    ]
+}
+```
+
+Then you will get this special Fooocus software for you
+
+<details>
+
+<summary>Click here to the see the image. </summary>
+
+![image](https://github.com/lllyasviel/misc/assets/19834515/002b0fd1-2cf3-4cd7-8a73-cde573729c07)
+
+("girl in garden, holding flowers, freckles", seed 12345)
+
+</details>
+
+Below, for comparison, is the default Fooocus without config customization:
+
+<details>
+
+<summary>Click here to the see the image. </summary>
+
+![image](https://github.com/lllyasviel/misc/assets/19834515/1a9fa48b-37af-48bc-bc7e-1cb03bb38b59)
+
+("girl in garden, holding flowers, freckles", seed 12345)
+
+</details>
+
+You can see that default Fooocus is also strong though "realisticStockPhoto_v10" may understand "freckles" better. 
+
+Consider twice before you really change the config because in many cases results are worse than default official Fooocus. You are warned, and you need to know exactly what you are doing.
+
+If you find yourself breaking things, just delete `Fooocus\user_path_config.txt`. Fooocus will go back to default.
 
 ## Advanced Features
 

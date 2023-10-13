@@ -20,7 +20,7 @@ def worker():
     import modules.flags as flags
     import modules.path
     import modules.patch
-    import comfy.model_management
+    import fcbh.model_management
     import fooocus_extras.preprocessors as preprocessors
     import modules.inpaint_worker as inpaint_worker
     import modules.advanced_parameters as advanced_parameters
@@ -29,7 +29,7 @@ def worker():
     from modules.sdxl_styles import apply_style, aspect_ratios, fooocus_expansion
     from modules.private_logger import log
     from modules.expansion import safe_str
-    from modules.util import join_prompts, remove_empty_str, HWC3, resize_image, image_is_generated_in_current_ui
+    from modules.util import join_prompts, remove_empty_str, HWC3, resize_image, image_is_generated_in_current_ui, make_sure_that_image_is_not_too_large
     from modules.upscaler import perform_upscale
 
     try:
@@ -113,6 +113,7 @@ def worker():
         inpaint_worker.current_task = None
         width, height = aspect_ratios[aspect_ratios_selection]
         skip_prompt_processing = False
+        refiner_swap_method = advanced_parameters.refiner_swap_method
 
         raw_prompt = prompt
         raw_negative_prompt = negative_prompt
@@ -172,8 +173,9 @@ def worker():
                 if isinstance(inpaint_image, np.ndarray) and isinstance(inpaint_mask, np.ndarray) \
                         and (np.any(inpaint_mask > 127) or len(outpaint_selections) > 0):
                     progressbar(1, 'Downloading inpainter ...')
-                    inpaint_head_model_path, inpaint_patch_model_path = modules.path.downloading_inpaint_models()
+                    inpaint_head_model_path, inpaint_patch_model_path = modules.path.downloading_inpaint_models(advanced_parameters.inpaint_engine)
                     loras += [(inpaint_patch_model_path, 1.0)]
+                    print(f'[Inpaint] Current inpaint model is {inpaint_patch_model_path}')
                     goals.append('inpaint')
                     sampler_name = 'dpmpp_fooocus_2m_sde_inpaint_seamless'
             if current_tab == 'ip' or \
@@ -287,6 +289,8 @@ def worker():
                 denoising_strength = 0.85
             if advanced_parameters.overwrite_vary_strength > 0:
                 denoising_strength = advanced_parameters.overwrite_vary_strength
+
+            uov_input_image = make_sure_that_image_is_not_too_large(uov_input_image)
             initial_pixels = core.numpy_to_pytorch(uov_input_image)
             progressbar(13, 'VAE encoding ...')
             initial_latent = core.encode_vae(vae=pipeline.final_vae, pixels=initial_pixels)
@@ -349,11 +353,14 @@ def worker():
             initial_pixels = core.numpy_to_pytorch(uov_input_image)
             progressbar(13, 'VAE encoding ...')
 
-            initial_latent = core.encode_vae(vae=pipeline.final_vae, pixels=initial_pixels, tiled=True)
+            initial_latent = core.encode_vae(
+                vae=pipeline.final_vae if pipeline.final_refiner_vae is None else pipeline.final_refiner_vae,
+                pixels=initial_pixels, tiled=True)
             B, C, H, W = initial_latent['samples'].shape
             width = W * 8
             height = H * 8
             print(f'Final resolution is {str((height, width))}.')
+            refiner_swap_method = 'upscale'
 
         if 'inpaint' in goals:
             if len(outpaint_selections) > 0:
@@ -383,6 +390,8 @@ def worker():
             inpaint_worker.current_task = inpaint_worker.InpaintWorker(image=inpaint_image, mask=inpaint_mask,
                                                                        is_outpaint=len(outpaint_selections) > 0)
 
+            pipeline.final_unet.model.diffusion_model.in_inpaint = True
+
             # print(f'Inpaint task: {str((height, width))}')
             # outputs.append(['results', inpaint_worker.current_task.visualize_mask_processing()])
             # return
@@ -395,7 +404,14 @@ def worker():
             inpaint_mask = core.numpy_to_pytorch(inpaint_worker.current_task.mask_ready[None])
             inpaint_mask = torch.nn.functional.avg_pool2d(inpaint_mask, (8, 8))
             inpaint_mask = torch.nn.functional.interpolate(inpaint_mask, (H, W), mode='bilinear')
-            inpaint_worker.current_task.load_latent(latent=inpaint_latent, mask=inpaint_mask)
+
+            latent_after_swap = None
+            if pipeline.final_refiner_vae is not None:
+                progressbar(13, 'VAE SD15 encoding ...')
+                latent_after_swap = core.encode_vae(vae=pipeline.final_refiner_vae, pixels=inpaint_pixels)['samples']
+
+            inpaint_worker.current_task.load_latent(latent=inpaint_latent, mask=inpaint_mask,
+                                                    latent_after_swap=latent_after_swap)
 
             progressbar(13, 'VAE inpaint encoding ...')
 
@@ -467,7 +483,7 @@ def worker():
 
         outputs.append(['preview', (13, 'Moving model to GPU ...', None)])
         execution_start_time = time.perf_counter()
-        comfy.model_management.load_models_gpu([pipeline.final_unet])
+        fcbh.model_management.load_models_gpu([pipeline.final_unet])
         moving_time = time.perf_counter() - execution_start_time
         print(f'Moving model to GPU: {moving_time:.2f} seconds')
 
@@ -510,7 +526,8 @@ def worker():
                     latent=initial_latent,
                     denoise=denoising_strength,
                     tiled=tiled,
-                    cfg_scale=cfg_scale
+                    cfg_scale=cfg_scale,
+                    refiner_swap_method=refiner_swap_method
                 )
 
                 del task['c'], task['uc'], positive_cond, negative_cond  # Save memory
@@ -541,9 +558,13 @@ def worker():
                     log(x, d, single_line_number=3)
 
                 results += imgs
-            except comfy.model_management.InterruptProcessingException as e:
-                print('User stopped')
-                break
+            except fcbh.model_management.InterruptProcessingException as e:
+                if shared.last_stop == 'skip':
+                    print('User skipped')
+                    continue
+                else:
+                    print('User stopped')
+                    break
 
             execution_time = time.perf_counter() - execution_start_time
             print(f'Generating and saving time: {execution_time:.2f} seconds')

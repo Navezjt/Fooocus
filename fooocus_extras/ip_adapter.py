@@ -1,16 +1,12 @@
 import torch
-import comfy.clip_vision
+import fcbh.clip_vision
 import safetensors.torch as sf
-import comfy.model_management as model_management
+import fcbh.model_management as model_management
 import contextlib
+import fcbh.ldm.modules.attention as attention
 
 from fooocus_extras.resampler import Resampler
-from comfy.model_patcher import ModelPatcher
-
-
-if model_management.xformers_enabled():
-    import xformers
-    import xformers.ops
+from fcbh.model_patcher import ModelPatcher
 
 
 SD_V12_CHANNELS = [320] * 4 + [640] * 4 + [1280] * 4 + [1280] * 6 + [640] * 6 + [320] * 6 + [1280] * 2
@@ -18,32 +14,7 @@ SD_XL_CHANNELS = [640] * 8 + [1280] * 40 + [1280] * 60 + [640] * 12 + [1280] * 2
 
 
 def sdp(q, k, v, extra_options):
-    if model_management.xformers_enabled():
-        b, _, _ = q.shape
-        q, k, v = map(
-            lambda t: t.unsqueeze(3)
-            .reshape(b, t.shape[1], extra_options["n_heads"], extra_options["dim_head"])
-            .permute(0, 2, 1, 3)
-            .reshape(b * extra_options["n_heads"], t.shape[1], extra_options["dim_head"])
-            .contiguous(),
-            (q, k, v),
-        )
-        out = xformers.ops.memory_efficient_attention(q, k, v, attn_bias=None, op=None)
-        out = (
-            out.unsqueeze(0)
-            .reshape(b, extra_options["n_heads"], out.shape[1], extra_options["dim_head"])
-            .permute(0, 2, 1, 3)
-            .reshape(b, out.shape[1], extra_options["n_heads"] * extra_options["dim_head"])
-        )
-    else:
-        b, _, _ = q.shape
-        q, k, v = map(
-            lambda t: t.view(b, -1, extra_options["n_heads"], extra_options["dim_head"]).transpose(1, 2),
-            (q, k, v),
-        )
-        out = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=False)
-        out = out.transpose(1, 2).reshape(b, -1, extra_options["n_heads"] * extra_options["dim_head"])
-    return out
+    return attention.optimized_attention(q, k, v, heads=extra_options["n_heads"], mask=None)
 
 
 class ImageProjModel(torch.nn.Module):
@@ -110,7 +81,7 @@ class IPAdapterModel(torch.nn.Module):
         self.ip_layers.load_state_dict_ordered(state_dict["ip_adapter"])
 
 
-clip_vision: comfy.clip_vision.ClipVisionModel = None
+clip_vision: fcbh.clip_vision.ClipVisionModel = None
 ip_negative: torch.Tensor = None
 image_proj_model: ModelPatcher = None
 ip_layers: ModelPatcher = None
@@ -131,7 +102,7 @@ def load_ip_adapter(clip_vision_path, ip_negative_path, ip_adapter_path):
         return
 
     ip_negative = sf.load_file(ip_negative_path)['data']
-    clip_vision = comfy.clip_vision.load(clip_vision_path)
+    clip_vision = fcbh.clip_vision.load(clip_vision_path)
 
     load_device = model_management.get_torch_device()
     offload_device = torch.device('cpu')
@@ -179,7 +150,7 @@ def preprocess(img):
     global ip_unconds
 
     inputs = clip_vision.processor(images=img, return_tensors="pt")
-    comfy.model_management.load_model_gpu(clip_vision.patcher)
+    fcbh.model_management.load_model_gpu(clip_vision.patcher)
     pixel_values = inputs['pixel_values'].to(clip_vision.load_device)
 
     if clip_vision.dtype != torch.float32:
@@ -187,7 +158,7 @@ def preprocess(img):
     else:
         precision_scope = lambda a, b: contextlib.nullcontext(a)
 
-    with precision_scope(comfy.model_management.get_autocast_device(clip_vision.load_device), torch.float32):
+    with precision_scope(fcbh.model_management.get_autocast_device(clip_vision.load_device), torch.float32):
         outputs = clip_vision.model(pixel_values=pixel_values, output_hidden_states=True)
 
     if ip_adapter.plus:
@@ -195,10 +166,10 @@ def preprocess(img):
     else:
         cond = outputs.image_embeds.to(ip_adapter.dtype)
 
-    comfy.model_management.load_model_gpu(image_proj_model)
+    fcbh.model_management.load_model_gpu(image_proj_model)
     cond = image_proj_model.model(cond).to(device=ip_adapter.load_device, dtype=ip_adapter.dtype)
 
-    comfy.model_management.load_model_gpu(ip_layers)
+    fcbh.model_management.load_model_gpu(ip_layers)
 
     if ip_unconds is None:
         uncond = ip_negative.to(device=ip_adapter.load_device, dtype=ip_adapter.dtype)

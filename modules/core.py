@@ -4,26 +4,26 @@ patch_all()
 
 
 import os
-import random
 import einops
 import torch
 import numpy as np
 
-import comfy.model_management
-import comfy.model_detection
-import comfy.model_patcher
-import comfy.utils
-import comfy.controlnet
+import fcbh.model_management
+import fcbh.model_detection
+import fcbh.model_patcher
+import fcbh.utils
+import fcbh.controlnet
 import modules.sample_hijack
-import comfy.samplers
+import fcbh.samplers
+import fcbh.latent_formats
 
-from comfy.sd import load_checkpoint_guess_config
+from fcbh.sd import load_checkpoint_guess_config
 from nodes import VAEDecode, EmptyLatentImage, VAEEncode, VAEEncodeTiled, VAEDecodeTiled, VAEEncodeForInpaint, \
     ControlNetApplyAdvanced
-from comfy_extras.nodes_freelunch import FreeU
-from comfy.sample import prepare_mask
+from fcbh_extras.nodes_freelunch import FreeU
+from fcbh.sample import prepare_mask
 from modules.patch import patched_sampler_cfg_function, patched_model_function_wrapper
-from comfy.lora import model_lora_keys_unet, model_lora_keys_clip, load_lora
+from fcbh.lora import model_lora_keys_unet, model_lora_keys_clip, load_lora
 
 
 opEmptyLatentImage = EmptyLatentImage()
@@ -53,7 +53,7 @@ def apply_freeu(model, b1, b2, s1, s2):
 @torch.no_grad()
 @torch.inference_mode()
 def load_controlnet(ckpt_filename):
-    return comfy.controlnet.load_controlnet(ckpt_filename)
+    return fcbh.controlnet.load_controlnet(ckpt_filename)
 
 
 @torch.no_grad()
@@ -61,47 +61,6 @@ def load_controlnet(ckpt_filename):
 def apply_controlnet(positive, negative, control_net, image, strength, start_percent, end_percent):
     return opControlNetApplyAdvanced.apply_controlnet(positive=positive, negative=negative, control_net=control_net,
         image=image, strength=strength, start_percent=start_percent, end_percent=end_percent)
-
-
-@torch.no_grad()
-@torch.inference_mode()
-def load_unet_only(unet_path):
-    sd_raw = comfy.utils.load_torch_file(unet_path)
-    sd = {}
-    flag = 'model.diffusion_model.'
-    for k in list(sd_raw.keys()):
-        if k.startswith(flag):
-            sd[k[len(flag):]] = sd_raw[k]
-        del sd_raw[k]
-
-    parameters = comfy.utils.calculate_parameters(sd)
-    fp16 = comfy.model_management.should_use_fp16(model_params=parameters)
-    if "input_blocks.0.0.weight" in sd:
-        # ldm
-        model_config = comfy.model_detection.model_config_from_unet(sd, "", fp16)
-        if model_config is None:
-            raise RuntimeError("ERROR: Could not detect model type of: {}".format(unet_path))
-        new_sd = sd
-    else:
-        # diffusers
-        model_config = comfy.model_detection.model_config_from_diffusers_unet(sd, fp16)
-        if model_config is None:
-            print("ERROR UNSUPPORTED UNET", unet_path)
-            return None
-
-        diffusers_keys = comfy.utils.unet_to_diffusers(model_config.unet_config)
-
-        new_sd = {}
-        for k in diffusers_keys:
-            if k in sd:
-                new_sd[diffusers_keys[k]] = sd.pop(k)
-            else:
-                print(diffusers_keys[k], k)
-    offload_device = comfy.model_management.unet_offload_device()
-    model = model_config.get_model(new_sd, "")
-    model = model.to(offload_device)
-    model.load_model_weights(new_sd, "")
-    return comfy.model_patcher.ModelPatcher(model, load_device=comfy.model_management.get_torch_device(), offload_device=offload_device)
 
 
 @torch.no_grad()
@@ -119,7 +78,7 @@ def load_sd_lora(model, lora_filename, strength_model=1.0, strength_clip=1.0):
     if strength_model == 0 and strength_clip == 0:
         return model
 
-    lora = comfy.utils.load_torch_file(lora_filename, safe_load=False)
+    lora = fcbh.utils.load_torch_file(lora_filename, safe_load=False)
 
     if lora_filename.lower().endswith('.fooocus.patch'):
         loaded = lora
@@ -196,31 +155,36 @@ class VAEApprox(torch.nn.Module):
         return x
 
 
-VAE_approx_model = None
+VAE_approx_models = {}
 
 
 @torch.no_grad()
 @torch.inference_mode()
-def get_previewer():
-    global VAE_approx_model
+def get_previewer(model):
+    global VAE_approx_models
 
-    if VAE_approx_model is None:
-        from modules.path import vae_approx_path
-        vae_approx_filename = os.path.join(vae_approx_path, 'xlvaeapp.pth')
+    from modules.path import vae_approx_path
+    is_sdxl = isinstance(model.model.latent_format, fcbh.latent_formats.SDXL)
+    vae_approx_filename = os.path.join(vae_approx_path, 'xlvaeapp.pth' if is_sdxl else 'vaeapp_sd15.pth')
+
+    if vae_approx_filename in VAE_approx_models:
+        VAE_approx_model = VAE_approx_models[vae_approx_filename]
+    else:
         sd = torch.load(vae_approx_filename, map_location='cpu')
         VAE_approx_model = VAEApprox()
         VAE_approx_model.load_state_dict(sd)
         del sd
         VAE_approx_model.eval()
 
-        if comfy.model_management.should_use_fp16():
+        if fcbh.model_management.should_use_fp16():
             VAE_approx_model.half()
             VAE_approx_model.current_type = torch.float16
         else:
             VAE_approx_model.float()
             VAE_approx_model.current_type = torch.float32
 
-        VAE_approx_model.to(comfy.model_management.get_torch_device())
+        VAE_approx_model.to(fcbh.model_management.get_torch_device())
+        VAE_approx_models[vae_approx_filename] = VAE_approx_model
 
     @torch.no_grad()
     @torch.inference_mode()
@@ -239,39 +203,50 @@ def get_previewer():
 @torch.inference_mode()
 def ksampler(model, positive, negative, latent, seed=None, steps=30, cfg=7.0, sampler_name='dpmpp_fooocus_2m_sde_inpaint_seamless',
              scheduler='karras', denoise=1.0, disable_noise=False, start_step=None, last_step=None,
-             force_full_denoise=False, callback_function=None, refiner=None, refiner_switch=-1):
+             force_full_denoise=False, callback_function=None, refiner=None, refiner_switch=-1,
+             previewer_start=None, previewer_end=None, sigmas=None):
+
+    if sigmas is not None:
+        sigmas = sigmas.clone().to(fcbh.model_management.get_torch_device())
+
     latent_image = latent["samples"]
     if disable_noise:
         noise = torch.zeros(latent_image.size(), dtype=latent_image.dtype, layout=latent_image.layout, device="cpu")
     else:
         batch_inds = latent["batch_index"] if "batch_index" in latent else None
-        noise = comfy.sample.prepare_noise(latent_image, seed, batch_inds)
+        noise = fcbh.sample.prepare_noise(latent_image, seed, batch_inds)
 
     noise_mask = None
     if "noise_mask" in latent:
         noise_mask = latent["noise_mask"]
 
-    previewer = get_previewer()
+    previewer = get_previewer(model)
+
+    if previewer_start is None:
+        previewer_start = 0
+
+    if previewer_end is None:
+        previewer_end = steps
 
     def callback(step, x0, x, total_steps):
-        comfy.model_management.throw_exception_if_processing_interrupted()
+        fcbh.model_management.throw_exception_if_processing_interrupted()
         y = None
         if previewer is not None:
-            y = previewer(x0, step, total_steps)
+            y = previewer(x0, previewer_start + step, previewer_end)
         if callback_function is not None:
-            callback_function(step, x0, x, total_steps, y)
+            callback_function(previewer_start + step, x0, x, previewer_end, y)
 
     disable_pbar = False
     modules.sample_hijack.current_refiner = refiner
     modules.sample_hijack.refiner_switch_step = refiner_switch
-    comfy.samplers.sample = modules.sample_hijack.sample_hacked
+    fcbh.samplers.sample = modules.sample_hijack.sample_hacked
 
     try:
-        samples = comfy.sample.sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image,
+        samples = fcbh.sample.sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image,
                                       denoise=denoise, disable_noise=disable_noise, start_step=start_step,
                                       last_step=last_step,
                                       force_full_denoise=force_full_denoise, noise_mask=noise_mask, callback=callback,
-                                      disable_pbar=disable_pbar, seed=seed)
+                                      disable_pbar=disable_pbar, seed=seed, sigmas=sigmas)
 
         out = latent.copy()
         out["samples"] = samples
