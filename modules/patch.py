@@ -1,4 +1,5 @@
 import torch
+import time
 import fcbh.model_base
 import fcbh.ldm.modules.diffusionmodules.openaimodel
 import fcbh.samplers
@@ -18,6 +19,7 @@ import fcbh.samplers
 import fcbh.cli_args
 import args_manager
 import modules.advanced_parameters as advanced_parameters
+import warnings
 
 from fcbh.k_diffusion import utils
 from fcbh.k_diffusion.sampling import BrownianTreeNoiseSampler, trange
@@ -272,12 +274,15 @@ def encode_token_weights_patched_with_a1111_method(self, token_weight_pairs):
     return torch.cat(output, dim=-2).cpu(), first_pooled.cpu()
 
 
-@torch.no_grad()
-def sample_dpmpp_fooocus_2m_sde_inpaint_seamless(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None, **kwargs):
-    print('[Sampler] Inpaint sampler is activated.')
+globalBrownianTreeNoiseSampler = None
 
-    sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
-    noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=extra_args.get("seed", None), cpu=False) if noise_sampler is None else noise_sampler
+
+@torch.no_grad()
+def sample_dpmpp_fooocus_2m_sde_inpaint_seamless(model, x, sigmas, extra_args=None, callback=None,
+                                                 disable=None, eta=1., s_noise=1., **kwargs):
+    global sigma_min, sigma_max
+
+    print('[Sampler] Fooocus sampler is activated.')
 
     seed = extra_args.get("seed", None)
     assert isinstance(seed, int)
@@ -288,8 +293,6 @@ def sample_dpmpp_fooocus_2m_sde_inpaint_seamless(model, x, sigmas, extra_args=No
     def get_energy():
         return torch.randn(x.size(), dtype=x.dtype, generator=energy_generator, device="cpu").to(x)
 
-    sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
-    noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=True) if noise_sampler is None else noise_sampler
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
 
@@ -328,7 +331,7 @@ def sample_dpmpp_fooocus_2m_sde_inpaint_seamless(model, x, sigmas, extra_args=No
                 r = h_last / h
                 x = x + 0.5 * (-h - eta_h).expm1().neg() * (1 / r) * (denoised - old_denoised)
 
-            x = x + noise_sampler(sigmas[i], sigmas[i + 1]) * sigmas[i + 1] * (
+            x = x + globalBrownianTreeNoiseSampler(sigmas[i], sigmas[i + 1]) * sigmas[i + 1] * (
                         -2 * eta_h).expm1().neg().sqrt() * s_noise
 
         old_denoised = denoised
@@ -469,6 +472,15 @@ def patched_get_autocast_device(dev):
         return 'cpu'
 
 
+def patched_load_models_gpu(*args, **kwargs):
+    execution_start_time = time.perf_counter()
+    y = fcbh.model_management.load_models_gpu_origin(*args, **kwargs)
+    moving_time = time.perf_counter() - execution_start_time
+    if moving_time > 0.1:
+        print(f'[Fooocus Model Management] Moving model(s) has taken {moving_time:.2f} seconds')
+    return y
+
+
 def patch_all():
     if not fcbh.model_management.DISABLE_SMART_MEMORY:
         vram_inadequate = fcbh.model_management.total_vram < 20 * 1024
@@ -481,14 +493,20 @@ def patch_all():
             args_manager.args.disable_smart_memory = True
             fcbh.cli_args.args.disable_smart_memory = True
 
+    if not hasattr(fcbh.model_management, 'load_models_gpu_origin'):
+        fcbh.model_management.load_models_gpu_origin = fcbh.model_management.load_models_gpu
+
+    fcbh.model_management.load_models_gpu = patched_load_models_gpu
     fcbh.model_management.get_autocast_device = patched_get_autocast_device
-    fcbh.samplers.SAMPLER_NAMES += ['dpmpp_fooocus_2m_sde_inpaint_seamless']
     fcbh.model_management.text_encoder_device = text_encoder_device_patched
     fcbh.model_patcher.ModelPatcher.calculate_weight = calculate_weight_patched
     fcbh.cldm.cldm.ControlNet.forward = patched_cldm_forward
     fcbh.ldm.modules.diffusionmodules.openaimodel.UNetModel.forward = patched_unet_forward
-    fcbh.k_diffusion.sampling.sample_dpmpp_fooocus_2m_sde_inpaint_seamless = sample_dpmpp_fooocus_2m_sde_inpaint_seamless
+    fcbh.k_diffusion.sampling.sample_dpmpp_2m_sde_gpu = sample_dpmpp_fooocus_2m_sde_inpaint_seamless
     fcbh.k_diffusion.external.DiscreteEpsDDPMDenoiser.forward = patched_discrete_eps_ddpm_denoiser_forward
     fcbh.model_base.SDXL.encode_adm = sdxl_encode_adm_patched
     fcbh.sd1_clip.ClipTokenWeightEncoder.encode_token_weights = encode_token_weights_patched_with_a1111_method
+
+    warnings.filterwarnings(action='ignore', module='torchsde')
+
     return

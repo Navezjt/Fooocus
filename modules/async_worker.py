@@ -177,7 +177,7 @@ def worker():
                     loras += [(inpaint_patch_model_path, 1.0)]
                     print(f'[Inpaint] Current inpaint model is {inpaint_patch_model_path}')
                     goals.append('inpaint')
-                    sampler_name = 'dpmpp_fooocus_2m_sde_inpaint_seamless'
+                    sampler_name = 'dpmpp_2m_sde_gpu'  # only support the patched dpmpp_2m_sde_gpu
             if current_tab == 'ip' or \
                     advanced_parameters.mixing_image_prompt_and_inpaint or \
                     advanced_parameters.mixing_image_prompt_and_vary_upscale:
@@ -482,12 +482,6 @@ def worker():
         print(f'Preparation time: {preparation_time:.2f} seconds')
 
         outputs.append(['preview', (13, 'Moving model to GPU ...', None)])
-        execution_start_time = time.perf_counter()
-        fcbh.model_management.load_models_gpu([pipeline.final_unet])
-        moving_time = time.perf_counter() - execution_start_time
-        print(f'Moving model to GPU: {moving_time:.2f} seconds')
-
-        outputs.append(['preview', (13, 'Starting tasks ...', None)])
 
         def callback(step, x0, x, total_steps, y):
             done_steps = current_task_id * steps + step

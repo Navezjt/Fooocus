@@ -11,6 +11,7 @@ from fcbh.samplers import resolve_areas_and_cond_masks, wrap_model, calculate_st
 
 current_refiner = None
 refiner_switch_step = -1
+history_record = None
 
 
 @torch.no_grad()
@@ -127,9 +128,15 @@ def sample_hacked(model, noise, positive, negative, cfg, device, sampler, sigmas
         return
 
     def callback_wrap(step, x0, x, total_steps):
+        global history_record
+        if isinstance(history_record, list):
+            history_record.append((step, x0, x))
         if step == refiner_switch_step and current_refiner is not None:
             refiner_switch()
         if callback is not None:
+            # residual_noise_preview = x - x0
+            # residual_noise_preview /= residual_noise_preview.std()
+            # residual_noise_preview *= x0.std()
             callback(step, x0, x, total_steps)
 
     samples = sampler.sample(model_wrap, sigmas, extra_args, callback_wrap, noise, latent_image, denoise_mask, disable_pbar)

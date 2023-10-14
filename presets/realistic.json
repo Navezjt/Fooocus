@@ -1,0 +1,24 @@
+{
+    "default_model": "realisticStockPhoto_v10.safetensors",
+    "default_refiner": "",
+    "default_lora": "SDXL_FILM_PHOTOGRAPHY_STYLE_BetaV0.4.safetensors",
+    "default_lora_weight": 0.25,
+    "default_cfg_scale": 3.0,
+    "default_sampler": "dpmpp_2m_sde_gpu",
+    "default_scheduler": "karras",
+    "default_styles": [
+        "Fooocus V2",
+        "Fooocus Realistic",
+        "Fooocus Strong Negative"
+    ],
+    "default_negative_prompt": "unrealistic, saturated, high contrast, big nose, painting, drawing, sketch, cartoon, anime, manga, render, CG, 3d, watermark, signature, label",
+    "default_positive_prompt": "",
+    "checkpoint_downloads": {
+        "realisticStockPhoto_v10.safetensors": "https://huggingface.co/lllyasviel/fav_models/resolve/main/fav/realisticStockPhoto_v10.safetensors"
+    },
+    "embeddings_downloads": {},
+    "default_aspect_ratio": "896*1152",
+    "lora_downloads": {
+        "SDXL_FILM_PHOTOGRAPHY_STYLE_BetaV0.4.safetensors": "https://huggingface.co/lllyasviel/fav_models/resolve/main/fav/SDXL_FILM_PHOTOGRAPHY_STYLE_BetaV0.4.safetensors"
+    }
+}

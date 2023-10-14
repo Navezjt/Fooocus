@@ -33,7 +33,7 @@ Using Fooocus is as easy as (probably easier than) Midjourney – but this does 
 | Image Prompt | Input Image -> Image Prompt <br> (Fooocus uses its own image prompt algorithm so that result quality and prompt understanding are more satisfying than all other software that uses standard SDXL methods like standard IP-Adapters or Revisions) |
 | --style | Advanced -> Style |
 | --stylize | Advanced -> Advanced -> Guidance |
-| --niji | Fooocus support SDXL models on Civitai <br> (You can google search “Civitai” if you do not know about it) |
+| --niji | [Multiple launchers: "run.bat", "run_anime.bat", and "run_realistic.bat".](https://github.com/lllyasviel/Fooocus/discussions/679) <br> Fooocus support SDXL models on Civitai <br> (You can google search “Civitai” if you do not know about it) |
 | --quality | Advanced -> Quality |
 | --repeat | Advanced -> Image Number |
 | Multi Prompts (::) | Just use multiple lines of prompts |
@@ -55,7 +55,7 @@ We also have a few things borrowed from the best parts of LeonardoAI:
 
 You can directly download Fooocus with:
 
-**[>>> Click here to download <<<](https://github.com/lllyasviel/Fooocus/releases/download/release/Fooocus_win64_2-1-25.7z)**
+**[>>> Click here to download <<<](https://github.com/lllyasviel/Fooocus/releases/download/release/Fooocus_win64_2-1-60.7z)**
 
 After you download the file, please uncompress it, and then run the "run.bat".
 
@@ -66,6 +66,8 @@ In the first time you launch the software, it will automatically download models
 1. It will download [sd_xl_base_1.0_0.9vae.safetensors from here](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0_0.9vae.safetensors) as the file "Fooocus\models\checkpoints\sd_xl_base_1.0_0.9vae.safetensors".
 2. It will download [sd_xl_refiner_1.0_0.9vae.safetensors from here](https://huggingface.co/stabilityai/stable-diffusion-xl-refiner-1.0/resolve/main/sd_xl_refiner_1.0_0.9vae.safetensors) as the file "Fooocus\models\checkpoints\sd_xl_refiner_1.0_0.9vae.safetensors".
 3. Note that if you use inpaint, at the first time you inpaint an image, it will download [Fooocus's own inpaint control model from here](https://huggingface.co/lllyasviel/fooocus_inpaint/resolve/main/inpaint.fooocus.patch) as the file "Fooocus\models\inpaint\inpaint.fooocus.patch" (the size of this file is 1.28GB).
+
+After Fooocus 2.1.60, you will also have `run_anime.bat` and `run_realistic.bat`. They are different model presets (and requires different models, but thet will be automatically downloaded). [Check here for more details](https://github.com/lllyasviel/Fooocus/discussions/679).
 
 ![image](https://github.com/lllyasviel/Fooocus/assets/19834515/d386f817-4bd7-490c-ad89-c1e228c23447)
 
@@ -100,6 +102,8 @@ Please open an issue if you use similar devices but still cannot achieve accepta
 | --- | --- |
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lllyasviel/Fooocus/blob/main/fooocus_colab.ipynb) | Fooocus Official
 
+In Colab, you can modify the last line to `!python entry_with_update.py --preset anime --share` or `!python entry_with_update.py --preset realistic --share` for Fooocus Anime/Realistic Edition.
+
 Note that this Colab will disable refiner by default because Colab free's resource is relatively limited. 
 
 Thanks to [camenduru](https://github.com/camenduru)!
@@ -124,6 +128,8 @@ Or if you want to open a remote port, use
     conda activate fooocus
     python entry_with_update.py --listen
 
+Use `python entry_with_update.py --preset anime` or `python entry_with_update.py --preset realistic` for Fooocus Anime/Realistic Edition.
+
 ### Linux (Using Python Venv)
 
 Your Linux needs to have **Python 3.10** installed, and lets say your Python can be called with command **python3** with your venv system working, you can
@@ -144,6 +150,8 @@ Or if you want to open a remote port, use
     source fooocus_env/bin/activate
     python entry_with_update.py --listen
 
+Use `python entry_with_update.py --preset anime` or `python entry_with_update.py --preset realistic` for Fooocus Anime/Realistic Edition.
+
 ### Linux (Using native system Python)
 
 If you know what you are doing, and your Linux already has **Python 3.10** installed, and your Python can be called with command **python3** (and Pip with **pip3**), you can
@@ -159,6 +167,8 @@ See the above sections for model downloads. You can launch the software with:
 Or if you want to open a remote port, use
 
     python3 entry_with_update.py --listen
+
+Use `python entry_with_update.py --preset anime` or `python entry_with_update.py --preset realistic` for Fooocus Anime/Realistic Edition.
 
 ### Linux (AMD GPUs)
 
@@ -287,7 +297,7 @@ If you find yourself breaking things, just delete `Fooocus\user_path_config.txt`
 
 ## Thanks
 
-The codebase starts from an odd mixture of [Automatic1111](https://github.com/AUTOMATIC1111/stable-diffusion-webui) and [ComfyUI](https://github.com/comfyanonymous/ComfyUI). (And they both use GPL license.)
+Fooocus is powered by [FCBH backend](https://github.com/lllyasviel/Fooocus/tree/main/backend), which starts from an odd mixture of [Automatic1111](https://github.com/AUTOMATIC1111/stable-diffusion-webui) and [ComfyUI](https://github.com/comfyanonymous/ComfyUI).
 
 ## Update Log
 

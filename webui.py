@@ -13,7 +13,7 @@ import modules.gradio_hijack as grh
 import modules.advanced_parameters as advanced_parameters
 import args_manager
 
-from modules.sdxl_styles import legal_style_names, aspect_ratios, default_aspect_ratio
+from modules.sdxl_styles import legal_style_names, aspect_ratios
 from modules.private_logger import get_current_html_path
 
 
@@ -47,7 +47,10 @@ def generate_clicked(*args):
     return
 
 
-shared.gradio_root = gr.Blocks(title='Fooocus ' + fooocus_version.version, css=modules.html.css).queue()
+shared.gradio_root = gr.Blocks(
+    title=f'Fooocus {fooocus_version.version} ' + ('' if args_manager.args.preset is None else args_manager.args.preset),
+    css=modules.html.css).queue()
+
 with shared.gradio_root:
     with gr.Row():
         with gr.Column():
@@ -56,7 +59,9 @@ with shared.gradio_root:
             gallery = gr.Gallery(label='Gallery', show_label=False, object_fit='contain', height=720, visible=True, elem_classes='resizable_area')
             with gr.Row(elem_classes='type_row'):
                 with gr.Column(scale=0.85):
-                    prompt = gr.Textbox(show_label=False, placeholder="Type prompt here.", container=False, autofocus=True, elem_classes='type_row', lines=1024)
+                    prompt = gr.Textbox(show_label=False, placeholder="Type prompt here.",
+                                        value=modules.path.default_positive_prompt,
+                                        container=False, autofocus=True, elem_classes='type_row', lines=1024)
                 with gr.Column(scale=0.15, min_width=0):
                     run_button = gr.Button(label="Generate", value="Generate", elem_classes='type_row', visible=True)
                     skip_button = gr.Button(label="Skip", value="Skip", elem_classes='type_row_half', visible=False)
@@ -174,7 +179,7 @@ with shared.gradio_root:
             with gr.Tab(label='Setting'):
                 performance_selection = gr.Radio(label='Performance', choices=['Speed', 'Quality'], value='Speed')
                 aspect_ratios_selection = gr.Radio(label='Aspect Ratios', choices=list(aspect_ratios.keys()),
-                                                   value=default_aspect_ratio, info='width × height')
+                                                   value=modules.path.default_aspect_ratio, info='width × height')
                 image_number = gr.Slider(label='Image Number', minimum=1, maximum=32, step=1, value=2)
                 negative_prompt = gr.Textbox(label='Negative Prompt', show_label=True, placeholder="Type prompt here.",
                                              info='Describing what you do not want to see.', lines=2,
