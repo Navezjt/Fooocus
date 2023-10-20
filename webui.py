@@ -2,6 +2,7 @@ from python_hijack import *
 
 import gradio as gr
 import random
+import os
 import time
 import shared
 import modules.path
@@ -15,6 +16,7 @@ import args_manager
 
 from modules.sdxl_styles import legal_style_names, aspect_ratios
 from modules.private_logger import get_current_html_path
+from modules.ui_gradio_extensions import reload_javascript
 
 
 def generate_clicked(*args):
@@ -47,25 +49,31 @@ def generate_clicked(*args):
     return
 
 
+reload_javascript()
+
 shared.gradio_root = gr.Blocks(
     title=f'Fooocus {fooocus_version.version} ' + ('' if args_manager.args.preset is None else args_manager.args.preset),
     css=modules.html.css).queue()
 
 with shared.gradio_root:
     with gr.Row():
-        with gr.Column():
+        with gr.Column(scale=2):
             progress_window = grh.Image(label='Preview', show_label=True, height=640, visible=False)
             progress_html = gr.HTML(value=modules.html.make_progress_html(32, 'Progress 32%'), visible=False, elem_id='progress-bar', elem_classes='progress-bar')
-            gallery = gr.Gallery(label='Gallery', show_label=False, object_fit='contain', height=720, visible=True, elem_classes='resizable_area')
+            gallery = gr.Gallery(label='Gallery', show_label=False, object_fit='contain', height=745, visible=True, elem_classes='resizable_area')
             with gr.Row(elem_classes='type_row'):
-                with gr.Column(scale=0.85):
+                with gr.Column(scale=17):
                     prompt = gr.Textbox(show_label=False, placeholder="Type prompt here.",
-                                        value=modules.path.default_positive_prompt,
                                         container=False, autofocus=True, elem_classes='type_row', lines=1024)
-                with gr.Column(scale=0.15, min_width=0):
-                    run_button = gr.Button(label="Generate", value="Generate", elem_classes='type_row', visible=True)
+
+                    if isinstance(modules.path.default_positive_prompt, str) \
+                            and modules.path.default_positive_prompt != '':
+                        shared.gradio_root.load(lambda: modules.path.default_positive_prompt, outputs=prompt)
+
+                with gr.Column(scale=3, min_width=0):
+                    generate_button = gr.Button(label="Generate", value="Generate", elem_classes='type_row', elem_id='generate_button', visible=True)
                     skip_button = gr.Button(label="Skip", value="Skip", elem_classes='type_row_half', visible=False)
-                    stop_button = gr.Button(label="Stop", value="Stop", elem_classes='type_row_half', visible=False)
+                    stop_button = gr.Button(label="Stop", value="Stop", elem_classes='type_row_half', elem_id='stop_button', visible=False)
 
                     def stop_clicked():
                         import fcbh.model_management as model_management
@@ -79,11 +87,11 @@ with shared.gradio_root:
                         model_management.interrupt_current_processing()
                         return
 
-                    stop_button.click(stop_clicked, outputs=[skip_button, stop_button], queue=False)
+                    stop_button.click(stop_clicked, outputs=[skip_button, stop_button], queue=False, _js='cancelGenerateForever')
                     skip_button.click(skip_clicked, queue=False)
             with gr.Row(elem_classes='advanced_check_row'):
                 input_image_checkbox = gr.Checkbox(label='Input Image', value=False, container=False, elem_classes='min_check')
-                advanced_checkbox = gr.Checkbox(label='Advanced', value=False, container=False, elem_classes='min_check')
+                advanced_checkbox = gr.Checkbox(label='Advanced', value=modules.path.default_advanced_checkbox, container=False, elem_classes='min_check')
             with gr.Row(visible=False) as image_input_panel:
                 with gr.Tabs():
                     with gr.TabItem(label='Upscale or Variation') as uov_tab:
@@ -175,12 +183,12 @@ with shared.gradio_root:
             inpaint_tab.select(lambda: ['inpaint', default_image], outputs=[current_tab, inpaint_input_image], queue=False, _js=down_js)
             ip_tab.select(lambda: 'ip', outputs=[current_tab], queue=False, _js=down_js)
 
-        with gr.Column(scale=0.5, visible=False) as right_col:
+        with gr.Column(scale=1, visible=modules.path.default_advanced_checkbox) as advanced_column:
             with gr.Tab(label='Setting'):
                 performance_selection = gr.Radio(label='Performance', choices=['Speed', 'Quality'], value='Speed')
                 aspect_ratios_selection = gr.Radio(label='Aspect Ratios', choices=list(aspect_ratios.keys()),
                                                    value=modules.path.default_aspect_ratio, info='width × height')
-                image_number = gr.Slider(label='Image Number', minimum=1, maximum=32, step=1, value=2)
+                image_number = gr.Slider(label='Image Number', minimum=1, maximum=32, step=1, value=modules.path.default_image_number)
                 negative_prompt = gr.Textbox(label='Negative Prompt', show_label=True, placeholder="Type prompt here.",
                                              info='Describing what you do not want to see.', lines=2,
                                              value=modules.path.default_negative_prompt)
@@ -258,10 +266,12 @@ with shared.gradio_root:
                                                      info='Set as -1 to disable. For developer debugging.')
                         overwrite_width = gr.Slider(label='Forced Overwrite of Generating Width',
                                                     minimum=-1, maximum=2048, step=1, value=-1,
-                                                    info='Set as -1 to disable. For developer debugging.')
+                                                    info='Set as -1 to disable. For developer debugging. '
+                                                         'Results will be worse for non-standard numbers that SDXL is not trained on.')
                         overwrite_height = gr.Slider(label='Forced Overwrite of Generating Height',
                                                      minimum=-1, maximum=2048, step=1, value=-1,
-                                                     info='Set as -1 to disable. For developer debugging.')
+                                                     info='Set as -1 to disable. For developer debugging. '
+                                                          'Results will be worse for non-standard numbers that SDXL is not trained on.')
                         overwrite_vary_strength = gr.Slider(label='Forced Overwrite of Denoising Strength of "Vary"',
                                                             minimum=-1, maximum=1.0, step=0.001, value=-1,
                                                             info='Set as negative number to disable. For developer debugging.')
@@ -273,7 +283,7 @@ with shared.gradio_root:
                                                      info='Version of Fooocus inpaint model')
 
                     with gr.Tab(label='Control Debug'):
-                        debugging_cn_preprocessor = gr.Checkbox(label='Debug Preprocessor of ControlNets', value=False)
+                        debugging_cn_preprocessor = gr.Checkbox(label='Debug Preprocessors', value=False)
 
                         mixing_image_prompt_and_vary_upscale = gr.Checkbox(label='Mixing Image Prompt and Vary/Upscale',
                                                                            value=False)
@@ -322,7 +332,7 @@ with shared.gradio_root:
 
                 model_refresh.click(model_refresh_clicked, [], [base_model, refiner_model] + lora_ctrls, queue=False)
 
-        advanced_checkbox.change(lambda x: gr.update(visible=x), advanced_checkbox, right_col, queue=False)
+        advanced_checkbox.change(lambda x: gr.update(visible=x), advanced_checkbox, advanced_column, queue=False)
 
         ctrls = [
             prompt, negative_prompt, style_selections,
@@ -335,11 +345,17 @@ with shared.gradio_root:
         ctrls += [outpaint_selections, inpaint_input_image]
         ctrls += ip_ctrls
 
-        run_button.click(lambda: (gr.update(visible=True, interactive=True), gr.update(visible=True, interactive=True), gr.update(visible=False), []), outputs=[stop_button, skip_button, run_button, gallery])\
-            .then(fn=refresh_seed, inputs=[seed_random, image_seed], outputs=image_seed)\
-            .then(advanced_parameters.set_all_advanced_parameters, inputs=adps)\
-            .then(fn=generate_clicked, inputs=ctrls, outputs=[progress_html, progress_window, gallery])\
-            .then(lambda: (gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)), outputs=[run_button, stop_button, skip_button])
+        generate_button.click(lambda: (gr.update(visible=True, interactive=True), gr.update(visible=True, interactive=True), gr.update(visible=False), []), outputs=[stop_button, skip_button, generate_button, gallery]) \
+            .then(fn=refresh_seed, inputs=[seed_random, image_seed], outputs=image_seed) \
+            .then(advanced_parameters.set_all_advanced_parameters, inputs=adps) \
+            .then(fn=generate_clicked, inputs=ctrls, outputs=[progress_html, progress_window, gallery]) \
+            .then(lambda: (gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)), outputs=[generate_button, stop_button, skip_button]) \
+            .then(fn=None, _js='playNotification')
+
+        for notification_file in ['notification.ogg', 'notification.mp3']:
+            if os.path.exists(notification_file):
+                gr.Audio(interactive=False, value=notification_file, elem_id='audio_notification', visible=False)
+                break
 
 
 shared.gradio_root.launch(
