@@ -9,25 +9,28 @@ import modules.path
 import fooocus_version
 import modules.html
 import modules.async_worker as worker
+import modules.constants as constants
 import modules.flags as flags
 import modules.gradio_hijack as grh
 import modules.advanced_parameters as advanced_parameters
 import args_manager
 
-from modules.sdxl_styles import legal_style_names, aspect_ratios
+from modules.sdxl_styles import legal_style_names
 from modules.private_logger import get_current_html_path
 from modules.ui_gradio_extensions import reload_javascript
-
-# as in k-diffusion (sampling.py)
-MIN_SEED = 0
-MAX_SEED = 2**63 - 1
+from modules.auth import auth_enabled, check_auth
 
 
 def generate_clicked(*args):
+    # outputs=[progress_html, progress_window, progress_gallery, gallery]
+
     execution_start_time = time.perf_counter()
+
+    worker.outputs = []
 
     yield gr.update(visible=True, value=modules.html.make_progress_html(1, 'Initializing ...')), \
         gr.update(visible=True, value=None), \
+        gr.update(visible=False, value=None), \
         gr.update(visible=False)
 
     worker.buffer.append(list(args))
@@ -41,9 +44,16 @@ def generate_clicked(*args):
                 percentage, title, image = product
                 yield gr.update(visible=True, value=modules.html.make_progress_html(percentage, title)), \
                     gr.update(visible=True, value=image) if image is not None else gr.update(), \
+                    gr.update(), \
                     gr.update(visible=False)
             if flag == 'results':
+                yield gr.update(visible=True), \
+                    gr.update(visible=True), \
+                    gr.update(visible=True, value=product), \
+                    gr.update(visible=False)
+            if flag == 'finish':
                 yield gr.update(visible=False), \
+                    gr.update(visible=False), \
                     gr.update(visible=False), \
                     gr.update(visible=True, value=product)
                 finished = True
@@ -62,7 +72,9 @@ shared.gradio_root = gr.Blocks(
 with shared.gradio_root:
     with gr.Row():
         with gr.Column(scale=2):
-            progress_window = grh.Image(label='Preview', show_label=True, height=640, visible=False)
+            with gr.Row():
+                progress_window = grh.Image(label='Preview', show_label=True, height=640, visible=False)
+                progress_gallery = gr.Gallery(label='Finished Images', show_label=True, object_fit='contain', height=640, visible=False)
             progress_html = gr.HTML(value=modules.html.make_progress_html(32, 'Progress 32%'), visible=False, elem_id='progress-bar', elem_classes='progress-bar')
             gallery = gr.Gallery(label='Gallery', show_label=False, object_fit='contain', height=745, visible=True, elem_classes='resizable_area')
             with gr.Row(elem_classes='type_row'):
@@ -70,9 +82,9 @@ with shared.gradio_root:
                     prompt = gr.Textbox(show_label=False, placeholder="Type prompt here.",
                                         container=False, autofocus=True, elem_classes='type_row', lines=1024)
 
-                    if isinstance(modules.path.default_positive_prompt, str) \
-                            and modules.path.default_positive_prompt != '':
-                        shared.gradio_root.load(lambda: modules.path.default_positive_prompt, outputs=prompt)
+                    default_prompt = modules.path.default_prompt
+                    if isinstance(default_prompt, str) and default_prompt != '':
+                        shared.gradio_root.load(lambda: default_prompt, outputs=prompt)
 
                 with gr.Column(scale=3, min_width=0):
                     generate_button = gr.Button(label="Generate", value="Generate", elem_classes='type_row', elem_id='generate_button', visible=True)
@@ -150,9 +162,9 @@ with shared.gradio_root:
 
                     with gr.TabItem(label='Inpaint or Outpaint (beta)') as inpaint_tab:
                         inpaint_input_image = grh.Image(label='Drag above image to here', source='upload', type='numpy', tool='sketch', height=500, brush_color="#FFFFFF", elem_id='inpaint_canvas')
-                        gr.HTML('Outpaint Expansion (<a href="https://github.com/lllyasviel/Fooocus/discussions/414" target="_blank">\U0001F4D4 Document</a>):')
+                        gr.HTML('Outpaint Expansion Direction:')
                         outpaint_selections = gr.CheckboxGroup(choices=['Left', 'Right', 'Top', 'Bottom'], value=[], label='Outpaint', show_label=False, container=False)
-                        gr.HTML('* \"Inpaint or Outpaint\" is powered by the sampler \"DPMPP Fooocus Seamless 2M SDE Karras Inpaint Sampler\" (beta)')
+                        gr.HTML('* Powered by Fooocus Inpaint Engine (beta) <a href="https://github.com/lllyasviel/Fooocus/discussions/414" target="_blank">\U0001F4D4 Document</a>')
 
             switch_js = "(x) => {if(x){setTimeout(() => window.scrollTo({ top: 850, behavior: 'smooth' }), 50);}else{setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);} return x}"
             down_js = "() => {setTimeout(() => window.scrollTo({ top: 850, behavior: 'smooth' }), 50);}"
@@ -190,12 +202,12 @@ with shared.gradio_root:
         with gr.Column(scale=1, visible=modules.path.default_advanced_checkbox) as advanced_column:
             with gr.Tab(label='Setting'):
                 performance_selection = gr.Radio(label='Performance', choices=['Speed', 'Quality'], value='Speed')
-                aspect_ratios_selection = gr.Radio(label='Aspect Ratios', choices=list(aspect_ratios.keys()),
+                aspect_ratios_selection = gr.Radio(label='Aspect Ratios', choices=modules.path.available_aspect_ratios,
                                                    value=modules.path.default_aspect_ratio, info='width × height')
                 image_number = gr.Slider(label='Image Number', minimum=1, maximum=32, step=1, value=modules.path.default_image_number)
                 negative_prompt = gr.Textbox(label='Negative Prompt', show_label=True, placeholder="Type prompt here.",
                                              info='Describing what you do not want to see.', lines=2,
-                                             value=modules.path.default_negative_prompt)
+                                             value=modules.path.default_prompt_negative)
                 seed_random = gr.Checkbox(label='Random', value=True)
                 image_seed = gr.Textbox(label='Seed', value=0, max_lines=1, visible=False) # workaround for https://github.com/gradio-app/gradio/issues/5354
 
@@ -204,15 +216,15 @@ with shared.gradio_root:
 
                 def refresh_seed(r, seed_string):
                     if r:
-                        return random.randint(MIN_SEED, MAX_SEED)
+                        return random.randint(constants.MIN_SEED, constants.MAX_SEED)
                     else:
                         try:
                             seed_value = int(seed_string)
-                            if MIN_SEED <= seed_value <= MAX_SEED:
+                            if constants.MIN_SEED <= seed_value <= constants.MAX_SEED:
                                 return seed_value
                         except ValueError:
                             pass
-                        return random.randint(MIN_SEED, MAX_SEED)
+                        return random.randint(constants.MIN_SEED, constants.MAX_SEED)
 
                 seed_random.change(random_checked, inputs=[seed_random], outputs=[image_seed], queue=False)
 
@@ -241,6 +253,9 @@ with shared.gradio_root:
                                       info='Higher value means image and texture are sharper.')
                 guidance_scale = gr.Slider(label='Guidance Scale', minimum=1.0, maximum=30.0, step=0.01, value=modules.path.default_cfg_scale,
                                       info='Higher value means style is cleaner, vivider, and more artistic.')
+                refiner_switch = gr.Slider(label='Refiner Switch At', minimum=0.0, maximum=1.0, step=0.0001,
+                                           info='When to switch from base model to the refiner (if refiner is used).',
+                                           value=modules.path.default_refiner_switch)
 
                 gr.HTML('<a href="https://github.com/lllyasviel/Fooocus/discussions/117" target="_blank">\U0001F4D4 Document</a>')
                 dev_mode = gr.Checkbox(label='Developer Debug Mode', value=False, container=False)
@@ -349,7 +364,7 @@ with shared.gradio_root:
             performance_selection, aspect_ratios_selection, image_number, image_seed, sharpness, guidance_scale
         ]
 
-        ctrls += [base_model, refiner_model] + lora_ctrls
+        ctrls += [base_model, refiner_model, refiner_switch] + lora_ctrls
         ctrls += [input_image_checkbox, current_tab]
         ctrls += [uov_method, uov_input_image]
         ctrls += [outpaint_selections, inpaint_input_image]
@@ -358,7 +373,7 @@ with shared.gradio_root:
         generate_button.click(lambda: (gr.update(visible=True, interactive=True), gr.update(visible=True, interactive=True), gr.update(visible=False), []), outputs=[stop_button, skip_button, generate_button, gallery]) \
             .then(fn=refresh_seed, inputs=[seed_random, image_seed], outputs=image_seed) \
             .then(advanced_parameters.set_all_advanced_parameters, inputs=adps) \
-            .then(fn=generate_clicked, inputs=ctrls, outputs=[progress_html, progress_window, gallery]) \
+            .then(fn=generate_clicked, inputs=ctrls, outputs=[progress_html, progress_window, progress_gallery, gallery]) \
             .then(lambda: (gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)), outputs=[generate_button, stop_button, skip_button]) \
             .then(fn=None, _js='playNotification')
 
@@ -379,5 +394,7 @@ shared.gradio_root.launch(
     inbrowser=args_manager.args.auto_launch,
     server_name=args_manager.args.listen,
     server_port=args_manager.args.port,
-    share=args_manager.args.share
+    share=args_manager.args.share,
+    auth=check_auth if args_manager.args.share and auth_enabled else None,
+    blocked_paths=[constants.AUTH_FILENAME]
 )

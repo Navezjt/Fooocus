@@ -3,10 +3,11 @@ import threading
 
 buffer = []
 outputs = []
+global_results = []
 
 
 def worker():
-    global buffer, outputs
+    global buffer, outputs, global_results
 
     import traceback
     import numpy as np
@@ -23,14 +24,15 @@ def worker():
     import fcbh.model_management
     import fooocus_extras.preprocessors as preprocessors
     import modules.inpaint_worker as inpaint_worker
+    import modules.constants as constants
     import modules.advanced_parameters as advanced_parameters
     import fooocus_extras.ip_adapter as ip_adapter
 
-    from modules.sdxl_styles import apply_style, apply_wildcards, aspect_ratios, fooocus_expansion
+    from modules.sdxl_styles import apply_style, apply_wildcards, fooocus_expansion
     from modules.private_logger import log
     from modules.expansion import safe_str
     from modules.util import join_prompts, remove_empty_str, HWC3, resize_image, \
-        get_image_shape_ceil, set_image_shape_ceil, get_shape_ceil
+        get_image_shape_ceil, set_image_shape_ceil, get_shape_ceil, resample_image
     from modules.upscaler import perform_upscale
 
     try:
@@ -45,6 +47,20 @@ def worker():
     def progressbar(number, text):
         print(f'[Fooocus] {text}')
         outputs.append(['preview', (number, text, None)])
+
+    def yield_result(imgs, do_not_show_finished_images=False):
+        global global_results
+
+        if not isinstance(imgs, list):
+            imgs = [imgs]
+
+        global_results = global_results + imgs
+
+        if do_not_show_finished_images:
+            return
+
+        outputs.append(['results', global_results])
+        return
 
     @torch.no_grad()
     @torch.inference_mode()
@@ -64,6 +80,7 @@ def worker():
         guidance_scale = args.pop()
         base_model_name = args.pop()
         refiner_model_name = args.pop()
+        refiner_switch = args.pop()
         loras = [(args.pop(), args.pop()) for _ in range(5)]
         input_image_checkbox = args.pop()
         current_tab = args.pop()
@@ -112,7 +129,10 @@ def worker():
         denoising_strength = 1.0
         tiled = False
         inpaint_worker.current_task = None
-        width, height = aspect_ratios[aspect_ratios_selection]
+
+        width, height = aspect_ratios_selection.split('×')
+        width, height = int(width), int(height)
+
         skip_prompt_processing = False
         refiner_swap_method = advanced_parameters.refiner_swap_method
 
@@ -128,10 +148,8 @@ def worker():
 
         if performance_selection == 'Speed':
             steps = 30
-            switch = 20
         else:
             steps = 60
-            switch = 40
 
         sampler_name = advanced_parameters.sampler_name
         scheduler_name = advanced_parameters.scheduler_name
@@ -152,10 +170,8 @@ def worker():
                     else:
                         if performance_selection == 'Speed':
                             steps = 18
-                            switch = 12
                         else:
                             steps = 36
-                            switch = 24
                     progressbar(1, 'Downloading upscale models ...')
                     modules.path.downloading_upscale_model()
             if (current_tab == 'inpaint' or (current_tab == 'ip' and advanced_parameters.mixing_image_prompt_and_inpaint))\
@@ -170,7 +186,6 @@ def worker():
                     loras += [(inpaint_patch_model_path, 1.0)]
                     print(f'[Inpaint] Current inpaint model is {inpaint_patch_model_path}')
                     goals.append('inpaint')
-                    sampler_name = 'dpmpp_2m_sde_gpu'  # only support the patched dpmpp_2m_sde_gpu
             if current_tab == 'ip' or \
                     advanced_parameters.mixing_image_prompt_and_inpaint or \
                     advanced_parameters.mixing_image_prompt_and_vary_upscale:
@@ -187,6 +202,8 @@ def worker():
         # Load or unload CNs
         pipeline.refresh_controlnets([controlnet_canny_path, controlnet_cpds_path])
         ip_adapter.load_ip_adapter(clip_vision_path, ip_negative_path, ip_adapter_path)
+
+        switch = int(round(steps * refiner_switch))
 
         if advanced_parameters.overwrite_step > 0:
             steps = advanced_parameters.overwrite_step
@@ -207,11 +224,15 @@ def worker():
 
         if not skip_prompt_processing:
 
-            prompts = remove_empty_str([safe_str(p) for p in prompt.split('\n')], default='')
-            negative_prompts = remove_empty_str([safe_str(p) for p in negative_prompt.split('\n')], default='')
+            prompts = remove_empty_str([safe_str(p) for p in prompt.splitlines()], default='')
+            negative_prompts = remove_empty_str([safe_str(p) for p in negative_prompt.splitlines()], default='')
 
             prompt = prompts[0]
             negative_prompt = negative_prompts[0]
+
+            if prompt == '':
+                # disable expansion when empty since it is not meaningful and influences image prompt
+                use_expansion = False
 
             extra_positive_prompts = prompts[1:] if len(prompts) > 1 else []
             extra_negative_prompts = negative_prompts[1:] if len(negative_prompts) > 1 else []
@@ -222,7 +243,7 @@ def worker():
             progressbar(3, 'Processing prompts ...')
             tasks = []
             for i in range(image_number):
-                task_seed = seed + i
+                task_seed = (seed + i) % (constants.MAX_SEED + 1) # randint is inclusive, % is not
                 task_rng = random.Random(task_seed)  # may bind to inpaint noise in the future
 
                 task_prompt = apply_wildcards(prompt, task_rng)
@@ -236,8 +257,8 @@ def worker():
                 if use_style:
                     for s in style_selections:
                         p, n = apply_style(s, positive=task_prompt)
-                        positive_basic_workloads.append(p)
-                        negative_basic_workloads.append(n)
+                        positive_basic_workloads = positive_basic_workloads + p
+                        negative_basic_workloads = negative_basic_workloads + n
                 else:
                     positive_basic_workloads.append(task_prompt)
 
@@ -326,10 +347,14 @@ def worker():
                 f = 1.0
 
             shape_ceil = get_shape_ceil(H * f, W * f)
+
             if shape_ceil < 1024:
                 print(f'[Upscale] Image is resized because it is too small.')
+                uov_input_image = set_image_shape_ceil(uov_input_image, 1024)
                 shape_ceil = 1024
-            uov_input_image = set_image_shape_ceil(uov_input_image, shape_ceil)
+            else:
+                uov_input_image = resample_image(uov_input_image, width=W * f, height=H * f)
+
             image_is_super_large = shape_ceil > 2800
 
             if 'fast' in uov_method:
@@ -345,7 +370,7 @@ def worker():
             if direct_return:
                 d = [('Upscale (Fast)', '2x')]
                 log(uov_input_image, d, single_line_number=1)
-                outputs.append(['results', [uov_input_image]])
+                yield_result(uov_input_image, do_not_show_finished_images=True)
                 return
 
             tiled = True
@@ -397,7 +422,7 @@ def worker():
             pipeline.final_unet.model.diffusion_model.in_inpaint = True
 
             if advanced_parameters.debugging_cn_preprocessor:
-                outputs.append(['results', inpaint_worker.current_task.visualize_mask_processing()])
+                yield_result(inpaint_worker.current_task.visualize_mask_processing(), do_not_show_finished_images=True)
                 return
 
             progressbar(13, 'VAE Inpaint encoding ...')
@@ -443,7 +468,7 @@ def worker():
                 cn_img = HWC3(cn_img)
                 task[0] = core.numpy_to_pytorch(cn_img)
                 if advanced_parameters.debugging_cn_preprocessor:
-                    outputs.append(['results', [cn_img]])
+                    yield_result(cn_img, do_not_show_finished_images=True)
                     return
             for task in cn_tasks[flags.cn_cpds]:
                 cn_img, cn_stop, cn_weight = task
@@ -452,7 +477,7 @@ def worker():
                 cn_img = HWC3(cn_img)
                 task[0] = core.numpy_to_pytorch(cn_img)
                 if advanced_parameters.debugging_cn_preprocessor:
-                    outputs.append(['results', [cn_img]])
+                    yield_result(cn_img, do_not_show_finished_images=True)
                     return
             for task in cn_tasks[flags.cn_ip]:
                 cn_img, cn_stop, cn_weight = task
@@ -463,7 +488,7 @@ def worker():
 
                 task[0] = ip_adapter.preprocess(cn_img)
                 if advanced_parameters.debugging_cn_preprocessor:
-                    outputs.append(['results', [cn_img]])
+                    yield_result(cn_img, do_not_show_finished_images=True)
                     return
 
             if len(cn_tasks[flags.cn_ip]) > 0:
@@ -479,7 +504,6 @@ def worker():
                 advanced_parameters.freeu_s2
             )
 
-        results = []
         all_steps = steps * image_number
 
         preparation_time = time.perf_counter() - execution_start_time
@@ -555,7 +579,7 @@ def worker():
                             d.append((f'LoRA [{n}] weight', w))
                     log(x, d, single_line_number=3)
 
-                results += imgs
+                yield_result(imgs, do_not_show_finished_images=len(tasks) == 1)
             except fcbh.model_management.InterruptProcessingException as e:
                 if shared.last_stop == 'skip':
                     print('User skipped')
@@ -566,8 +590,6 @@ def worker():
 
             execution_time = time.perf_counter() - execution_start_time
             print(f'Generating and saving time: {execution_time:.2f} seconds')
-
-        outputs.append(['results', results])
 
         pipeline.prepare_text_encoder(async_call=True)
         return
@@ -580,7 +602,9 @@ def worker():
                 handler(task)
             except:
                 traceback.print_exc()
-                outputs.append(['results', []])
+            if len(buffer) == 0:
+                outputs.append(['finish', global_results])
+                global_results = []
     pass
 
 

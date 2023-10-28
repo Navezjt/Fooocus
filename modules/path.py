@@ -9,6 +9,7 @@ from modules.util import get_files_from_folder
 
 config_path = "user_path_config.txt"
 config_dict = {}
+visited_keys = []
 
 try:
     if os.path.exists(config_path):
@@ -37,7 +38,8 @@ if preset is not None:
 
 
 def get_dir_or_set_default(key, default_value):
-    global config_dict
+    global config_dict, visited_keys
+    visited_keys.append(key)
     v = config_dict.get(key, None)
     if isinstance(v, str) and os.path.exists(v) and os.path.isdir(v):
         return v
@@ -62,7 +64,8 @@ temp_outputs_path = get_dir_or_set_default('temp_outputs_path', '../outputs/')
 
 
 def get_config_item_or_set_default(key, default_value, validator, disable_empty_as_none=False):
-    global config_dict
+    global config_dict, visited_keys
+    visited_keys.append(key)
     if key not in config_dict:
         config_dict[key] = default_value
         return default_value
@@ -87,6 +90,11 @@ default_refiner_model_name = get_config_item_or_set_default(
     key='default_refiner',
     default_value='sd_xl_refiner_1.0_0.9vae.safetensors',
     validator=lambda x: isinstance(x, str)
+)
+default_refiner_switch = get_config_item_or_set_default(
+    key='default_refiner_switch',
+    default_value=0.8,
+    validator=lambda x: isinstance(x, float)
 )
 default_lora_name = get_config_item_or_set_default(
     key='default_lora',
@@ -115,17 +123,17 @@ default_scheduler = get_config_item_or_set_default(
 )
 default_styles = get_config_item_or_set_default(
     key='default_styles',
-    default_value=['Fooocus V2', 'Default (Slightly Cinematic)'],
+    default_value=['Fooocus V2', 'Fooocus Enhance', 'Fooocus Sharp'],
     validator=lambda x: isinstance(x, list) and all(y in modules.sdxl_styles.legal_style_names for y in x)
 )
-default_negative_prompt = get_config_item_or_set_default(
-    key='default_negative_prompt',
-    default_value='low quality, bad hands, bad eyes, cropped, missing fingers, extra digit',
+default_prompt_negative = get_config_item_or_set_default(
+    key='default_prompt_negative',
+    default_value='',
     validator=lambda x: isinstance(x, str),
     disable_empty_as_none=True
 )
-default_positive_prompt = get_config_item_or_set_default(
-    key='default_positive_prompt',
+default_prompt = get_config_item_or_set_default(
+    key='default_prompt',
     default_value='',
     validator=lambda x: isinstance(x, str),
     disable_empty_as_none=True
@@ -163,21 +171,29 @@ embeddings_downloads = get_config_item_or_set_default(
     default_value={},
     validator=lambda x: isinstance(x, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in x.items())
 )
+available_aspect_ratios = get_config_item_or_set_default(
+    key='available_aspect_ratios',
+    default_value=['704*1408', '704*1344', '768*1344', '768*1280', '832*1216', '832*1152', '896*1152', '896*1088', '960*1088', '960*1024', '1024*1024', '1024*960', '1088*960', '1088*896', '1152*896', '1152*832', '1216*832', '1280*768', '1344*768', '1344*704', '1408*704', '1472*704', '1536*640', '1600*640', '1664*576', '1728*576'],
+    validator=lambda x: isinstance(x, list) and all('*' in v for v in x) and len(x) > 1
+)
 default_aspect_ratio = get_config_item_or_set_default(
     key='default_aspect_ratio',
-    default_value='1152*896',
-    validator=lambda x: x.replace('*', '×') in modules.sdxl_styles.aspect_ratios
-).replace('*', '×')
+    default_value='1152*896' if '1152*896' in available_aspect_ratios else available_aspect_ratios[0],
+    validator=lambda x: x in available_aspect_ratios
+)
 
 if preset is None:
     # Do not overwrite user config if preset is applied.
     with open(config_path, "w", encoding="utf-8") as json_file:
-        json.dump(config_dict, json_file, indent=4)
+        json.dump({k: config_dict[k] for k in visited_keys}, json_file, indent=4)
 
 os.makedirs(temp_outputs_path, exist_ok=True)
 
 model_filenames = []
 lora_filenames = []
+
+available_aspect_ratios = [x.replace('*', '×') for x in available_aspect_ratios]
+default_aspect_ratio = default_aspect_ratio.replace('*', '×')
 
 
 def get_model_filenames(folder_path, name_filter=None):
