@@ -77,7 +77,7 @@ After you download the file, please uncompress it, and then run the "run.bat".
 In the first time you launch the software, it will automatically download models:
 
 1. It will download [default models](#models) to the folder "Fooocus\models\checkpoints" given different presets. You can download them in advance if you do not want automatic download.
-2. Note that if you use inpaint, at the first time you inpaint an image, it will download [Fooocus's own inpaint control model from here](https://huggingface.co/lllyasviel/fooocus_inpaint/resolve/main/inpaint.fooocus.patch) as the file "Fooocus\models\inpaint\inpaint.fooocus.patch" (the size of this file is 1.28GB).
+2. Note that if you use inpaint, at the first time you inpaint an image, it will download [Fooocus's own inpaint control model from here](https://huggingface.co/lllyasviel/fooocus_inpaint/resolve/main/inpaint_v26.fooocus.patch) as the file "Fooocus\models\inpaint\inpaint_v26.fooocus.patch" (the size of this file is 1.28GB).
 
 After Fooocus 2.1.60, you will also have `run_anime.bat` and `run_realistic.bat`. They are different model presets (and requires different models, but thet will be automatically downloaded). [Check here for more details](https://github.com/lllyasviel/Fooocus/discussions/679).
 
@@ -108,7 +108,7 @@ Please open an issue if you use similar devices but still cannot achieve accepta
 
 ### Colab
 
-(Last tested - 2023 Oct 10)
+(Last tested - 2023 Nov 15)
 
 | Colab | Info
 | --- | --- |
@@ -277,8 +277,7 @@ For example, an edited `Fooocus\config.txt` (this file will be generated after t
     "path_outputs": "D:\\Fooocus\\outputs",
     "default_model": "realisticStockPhoto_v10.safetensors",
     "default_refiner": "",
-    "default_lora": "",
-    "default_lora_weight": 0.25,
+    "default_loras": [["lora_filename_1.safetensors", 0.5], ["lora_filename_2.safetensors", 0.5]],
     "default_cfg_scale": 3.0,
     "default_sampler": "dpmpp_2m",
     "default_scheduler": "karras",
