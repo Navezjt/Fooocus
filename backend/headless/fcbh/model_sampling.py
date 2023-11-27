@@ -24,7 +24,7 @@ class ModelSamplingDiscrete(torch.nn.Module):
         super().__init__()
         beta_schedule = "linear"
         if model_config is not None:
-            beta_schedule = model_config.beta_schedule
+            beta_schedule = model_config.sampling_settings.get("beta_schedule", beta_schedule)
         self._register_schedule(given_betas=None, beta_schedule=beta_schedule, timesteps=1000, linear_start=0.00085, linear_end=0.012, cosine_s=8e-3)
         self.sigma_data = 1.0
 
@@ -77,9 +77,9 @@ class ModelSamplingDiscrete(torch.nn.Module):
 
     def percent_to_sigma(self, percent):
         if percent <= 0.0:
-            return torch.tensor(999999999.9)
+            return 999999999.9
         if percent >= 1.0:
-            return torch.tensor(0.0)
+            return 0.0
         percent = 1.0 - percent
-        return self.sigma(torch.tensor(percent * 999.0))
+        return self.sigma(torch.tensor(percent * 999.0)).item()
 
