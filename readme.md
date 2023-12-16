@@ -107,6 +107,8 @@ Note that the minimal requirement is **4GB Nvidia GPU memory (4GB VRAM)** and **
 
 Please open an issue if you use similar devices but still cannot achieve acceptable performances.
 
+Note that the [minimal requirement](#minimal-requirement) for different platforms is different.
+
 See also the common problems and troubleshoots [here](troubleshoot.md).
 
 ### Colab
@@ -119,7 +121,7 @@ See also the common problems and troubleshoots [here](troubleshoot.md).
 
 In Colab, you can modify the last line to `!python entry_with_update.py --share` or `!python entry_with_update.py --preset anime --share` or `!python entry_with_update.py --preset realistic --share` for Fooocus Default/Anime/Realistic Edition.
 
-Note that this Colab will disable refiner by default because Colab free's resource is relatively limited. 
+Note that this Colab will disable refiner by default because Colab free's resource is relatively limited (and some "big" features like image prompt may cause free-tier Colab to disconnect). We make sure that basic text-to-image is always working on free-tier Colab.
 
 Thanks to [camenduru](https://github.com/camenduru)!
 
@@ -187,6 +189,8 @@ Use `python entry_with_update.py --preset anime` or `python entry_with_update.py
 
 ### Linux (AMD GPUs)
 
+Note that the [minimal requirement](#minimal-requirement) for different platforms is different.
+
 Same with the above instructions. You need to change torch to AMD version
 
     pip uninstall torch torchvision torchaudio torchtext functorch xformers 
@@ -197,6 +201,8 @@ AMD is not intensively tested, however. The AMD support is in beta.
 Use `python entry_with_update.py --preset anime` or `python entry_with_update.py --preset realistic` for Fooocus Anime/Realistic Edition.
 
 ### Windows(AMD GPUs)
+
+Note that the [minimal requirement](#minimal-requirement) for different platforms is different.
 
 Same with Windows. Download the software, edit the content of `run.bat` as:
 
@@ -213,6 +219,8 @@ For AMD, use `python entry_with_update.py --directml --preset anime` or `python 
 
 ### Mac
 
+Note that the [minimal requirement](#minimal-requirement) for different platforms is different.
+
 Mac is not intensively tested. Below is an unofficial guideline for using Mac. You can discuss problems [here](https://github.com/lllyasviel/Fooocus/pull/129).
 
 You can install Fooocus on Apple Mac silicon (M1 or M2) with macOS 'Catalina' or a newer version. Fooocus runs on Apple silicon computers via [PyTorch](https://pytorch.org/get-started/locally/) MPS device acceleration. Mac Silicon computers don't come with a dedicated graphics card, resulting in significantly longer image processing times compared to computers with dedicated graphics cards.
@@ -227,6 +235,34 @@ You can install Fooocus on Apple Mac silicon (M1 or M2) with macOS 'Catalina' or
 
 Use `python entry_with_update.py --preset anime` or `python entry_with_update.py --preset realistic` for Fooocus Anime/Realistic Edition.
 
+### Download Previous Version
+
+See the guidelines [here](https://github.com/lllyasviel/Fooocus/discussions/1405).
+
+## Minimal Requirement
+
+Below is the minimal requirement for running Fooocus locally. If your device capability is lower than this spec, you may not be able to use Fooocus locally. (Please let us know, in any case, if your device capability is lower but Fooocus still works.)
+
+| Operating System  | GPU                          | Minimal GPU Memory        | Minimal System Memory     | [System Swap](troubleshoot.md) | Note                                  |
+|-------------------|------------------------------|---------------------------|---------------------------|--------------------------------|---------------------------------------|
+| Windows/Linux     | Nvidia RTX 4XXX              | 4GB                       | 8GB                       | Required                       | fastest                               |
+| Windows/Linux     | Nvidia RTX 3XXX              | 4GB                       | 8GB                       | Required                       | usually faster than RTX 2XXX          |
+| Windows/Linux     | Nvidia RTX 2XXX              | 4GB                       | 8GB                       | Required                       | usually faster than GTX 1XXX          |
+| Windows/Linux     | Nvidia GTX 1XXX              | 8GB (&ast; 6GB uncertain) | 8GB                       | Required                       | only marginally faster than CPU       |
+| Windows/Linux     | Nvidia GTX 9XX               | 8GB                       | 8GB                       | Required                       | faster or slower than CPU             |
+| Windows/Linux     | Nvidia GTX < 9XX             | Not supported             | /                         | /                              | /                                     |
+| Windows           | AMD GPU                      | 16GB                      | 8GB                       | Required                       | via DirectML                          |
+| Linux             | AMD GPU                      | 8GB                       | 8GB                       | Required                       | via ROCm                              |
+| Windows           | &ast; AMD GPU ROCm (on hold) | 8GB     (on hold)         | 8GB             (on hold) | Required           (on hold)   | via ROCm     (on hold)                |
+| Mac               | M1/M2 MPS                    | Shared                    | Shared                    | Shared                         | about 9x slower than Nvidia RTX 3XXX  |
+| Windows/Linux/Mac | only use CPU                 | 0GB                       | 32GB                      | Required                       | about 17x slower than Nvidia RTX 3XXX |
+
+&ast; AMD GPU ROCm (on hold): The AMD is still working on supporting ROCm on Windows.
+
+&ast; Nvidia GTX 1XXX 6GB uncertain: Some people reports 6GB success on GTX 10XX but some other people reports failure cases.
+
+*Note that Fooocus is only for extremely high quality image generating. We will not support smaller models to reduce the requirement and sacrifice result quality.*
+
 ## Troubleshoot
 
 See the common problems [here](troubleshoot.md).
@@ -237,7 +273,7 @@ See the common problems [here](troubleshoot.md).
 Given different goals, the default models and configs of Fooocus is different:
 
 | Task | Windows | Linux args | Main Model | Refiner | Config |
-| - | - | - | - | - | - |
+| --- | --- | --- | --- | --- | --- |
 | General | run.bat |  | [juggernautXL v6_RunDiffusion](https://huggingface.co/lllyasviel/fav_models/resolve/main/fav/juggernautXL_version6Rundiffusion.safetensors) | not used | [here](https://github.com/lllyasviel/Fooocus/blob/main/modules/path.py) |
 | Realistic | run_realistic.bat | --preset realistic | [realistic_stock_photo](https://huggingface.co/lllyasviel/fav_models/resolve/main/fav/realisticStockPhoto_v10.safetensors) | not used | [here](https://github.com/lllyasviel/Fooocus/blob/main/presets/realistic.json) |
 | Anime | run_anime.bat | --preset anime | [bluepencil_v50](https://huggingface.co/lllyasviel/fav_models/resolve/main/fav/bluePencilXL_v050.safetensors) | [dreamsharper_v8](https://huggingface.co/lllyasviel/fav_models/resolve/main/fav/DreamShaper_8_pruned.safetensors) (SD1.5) | [here](https://github.com/lllyasviel/Fooocus/blob/main/presets/anime.json) |
@@ -348,7 +384,7 @@ See also [About Forking and Promotion of Forks](https://github.com/lllyasviel/Fo
 
 ## Thanks
 
-Special thanks to [twri](https://github.com/twri) and [3Diva](https://github.com/3Diva) for creating additional SDXL styles available in Fooocus.
+Special thanks to [twri](https://github.com/twri) and [3Diva](https://github.com/3Diva) for creating additional SDXL styles available in Fooocus. Thanks [daswer123](https://github.com/daswer123) for contributing the Canvas Zoom!
 
 ## Update Log
 
