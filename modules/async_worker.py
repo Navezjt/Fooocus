@@ -34,12 +34,13 @@ def worker():
     import modules.advanced_parameters as advanced_parameters
     import extras.ip_adapter as ip_adapter
     import extras.face_crop
+    import fooocus_version
 
     from modules.sdxl_styles import apply_style, apply_wildcards, fooocus_expansion
     from modules.private_logger import log
     from extras.expansion import safe_str
     from modules.util import remove_empty_str, HWC3, resize_image, \
-        get_image_shape_ceil, set_image_shape_ceil, get_shape_ceil, resample_image
+        get_image_shape_ceil, set_image_shape_ceil, get_shape_ceil, resample_image, erode_or_dilate
     from modules.upscaler import perform_upscale
 
     try:
@@ -138,6 +139,7 @@ def worker():
         outpaint_selections = args.pop()
         inpaint_input_image = args.pop()
         inpaint_additional_prompt = args.pop()
+        inpaint_mask_image_upload = args.pop()
 
         cn_tasks = {x: [] for x in flags.ip_list}
         for _ in range(4):
@@ -273,12 +275,29 @@ def worker():
                     and isinstance(inpaint_input_image, dict):
                 inpaint_image = inpaint_input_image['image']
                 inpaint_mask = inpaint_input_image['mask'][:, :, 0]
+                
+                if advanced_parameters.inpaint_mask_upload_checkbox:
+                    if isinstance(inpaint_mask_image_upload, np.ndarray):
+                        if inpaint_mask_image_upload.ndim == 3:
+                            H, W, C = inpaint_image.shape
+                            inpaint_mask_image_upload = resample_image(inpaint_mask_image_upload, width=W, height=H)
+                            inpaint_mask_image_upload = np.mean(inpaint_mask_image_upload, axis=2)
+                            inpaint_mask_image_upload = (inpaint_mask_image_upload > 127).astype(np.uint8) * 255
+                            inpaint_mask = np.maximum(inpaint_mask, inpaint_mask_image_upload)
+
+                if int(advanced_parameters.inpaint_erode_or_dilate) != 0:
+                    inpaint_mask = erode_or_dilate(inpaint_mask, advanced_parameters.inpaint_erode_or_dilate)
+
+                if advanced_parameters.invert_mask_checkbox:
+                    inpaint_mask = 255 - inpaint_mask
+
                 inpaint_image = HWC3(inpaint_image)
                 if isinstance(inpaint_image, np.ndarray) and isinstance(inpaint_mask, np.ndarray) \
                         and (np.any(inpaint_mask > 127) or len(outpaint_selections) > 0):
+                    progressbar(async_task, 1, 'Downloading upscale models ...')
+                    modules.config.downloading_upscale_model()
                     if inpaint_parameterized:
                         progressbar(async_task, 1, 'Downloading inpainter ...')
-                        modules.config.downloading_upscale_model()
                         inpaint_head_model_path, inpaint_patch_model_path = modules.config.downloading_inpaint_models(
                             advanced_parameters.inpaint_engine)
                         base_model_additional_loras += [(inpaint_patch_model_path, 1.0)]
@@ -396,8 +415,8 @@ def worker():
                     uc=None,
                     positive_top_k=len(positive_basic_workloads),
                     negative_top_k=len(negative_basic_workloads),
-                    log_positive_prompt='; '.join([task_prompt] + task_extra_positive_prompts),
-                    log_negative_prompt='; '.join([task_negative_prompt] + task_extra_negative_prompts),
+                    log_positive_prompt='\n'.join([task_prompt] + task_extra_positive_prompts),
+                    log_negative_prompt='\n'.join([task_negative_prompt] + task_extra_negative_prompts),
                 ))
 
             if use_expansion:
@@ -492,7 +511,7 @@ def worker():
 
             if direct_return:
                 d = [('Upscale (Fast)', '2x')]
-                log(uov_input_image, d, single_line_number=1)
+                log(uov_input_image, d)
                 yield_result(async_task, uov_input_image, do_not_show_finished_images=True)
                 return
 
@@ -774,12 +793,13 @@ def worker():
                         ('Refiner Switch', refiner_switch),
                         ('Sampler', sampler_name),
                         ('Scheduler', scheduler_name),
-                        ('Seed', task['task_seed'])
+                        ('Seed', task['task_seed']),
                     ]
-                    for n, w in loras:
+                    for li, (n, w) in enumerate(loras):
                         if n != 'None':
-                            d.append((f'LoRA [{n}] weight', w))
-                    log(x, d, single_line_number=3)
+                            d.append((f'LoRA {li + 1}', f'{n} : {w}'))
+                    d.append(('Version', 'v' + fooocus_version.version))
+                    log(x, d)
 
                 yield_result(async_task, imgs, do_not_show_finished_images=len(tasks) == 1)
             except ldm_patched.modules.model_management.InterruptProcessingException as e:
