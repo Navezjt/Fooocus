@@ -28,13 +28,9 @@ class ModelPatcher:
         if self.size > 0:
             return self.size
         model_sd = self.model.state_dict()
-        size = 0
-        for k in model_sd:
-            t = model_sd[k]
-            size += t.nelement() * t.element_size()
-        self.size = size
+        self.size = ldm_patched.modules.model_management.module_size(self.model)
         self.model_keys = set(model_sd.keys())
-        return size
+        return self.size
 
     def clone(self):
         n = ModelPatcher(self.model, self.load_device, self.offload_device, self.size, self.current_device, weight_inplace_update=self.weight_inplace_update)
@@ -55,11 +51,18 @@ class ModelPatcher:
     def memory_required(self, input_shape):
         return self.model.memory_required(input_shape=input_shape)
 
-    def set_model_sampler_cfg_function(self, sampler_cfg_function):
+    def set_model_sampler_cfg_function(self, sampler_cfg_function, disable_cfg1_optimization=False):
         if len(inspect.signature(sampler_cfg_function).parameters) == 3:
             self.model_options["sampler_cfg_function"] = lambda args: sampler_cfg_function(args["cond"], args["uncond"], args["cond_scale"]) #Old way
         else:
             self.model_options["sampler_cfg_function"] = sampler_cfg_function
+        if disable_cfg1_optimization:
+            self.model_options["disable_cfg1_optimization"] = True
+
+    def set_model_sampler_post_cfg_function(self, post_cfg_function, disable_cfg1_optimization=False):
+        self.model_options["sampler_post_cfg_function"] = self.model_options.get("sampler_post_cfg_function", []) + [post_cfg_function]
+        if disable_cfg1_optimization:
+            self.model_options["disable_cfg1_optimization"] = True
 
     def set_model_unet_function_wrapper(self, unet_wrapper_function):
         self.model_options["model_function_wrapper"] = unet_wrapper_function
@@ -70,13 +73,17 @@ class ModelPatcher:
             to["patches"] = {}
         to["patches"][name] = to["patches"].get(name, []) + [patch]
 
-    def set_model_patch_replace(self, patch, name, block_name, number):
+    def set_model_patch_replace(self, patch, name, block_name, number, transformer_index=None):
         to = self.model_options["transformer_options"]
         if "patches_replace" not in to:
             to["patches_replace"] = {}
         if name not in to["patches_replace"]:
             to["patches_replace"][name] = {}
-        to["patches_replace"][name][(block_name, number)] = patch
+        if transformer_index is not None:
+            block = (block_name, number, transformer_index)
+        else:
+            block = (block_name, number)
+        to["patches_replace"][name][block] = patch
 
     def set_model_attn1_patch(self, patch):
         self.set_model_patch(patch, "attn1_patch")
@@ -84,11 +91,11 @@ class ModelPatcher:
     def set_model_attn2_patch(self, patch):
         self.set_model_patch(patch, "attn2_patch")
 
-    def set_model_attn1_replace(self, patch, block_name, number):
-        self.set_model_patch_replace(patch, "attn1", block_name, number)
+    def set_model_attn1_replace(self, patch, block_name, number, transformer_index=None):
+        self.set_model_patch_replace(patch, "attn1", block_name, number, transformer_index)
 
-    def set_model_attn2_replace(self, patch, block_name, number):
-        self.set_model_patch_replace(patch, "attn2", block_name, number)
+    def set_model_attn2_replace(self, patch, block_name, number, transformer_index=None):
+        self.set_model_patch_replace(patch, "attn2", block_name, number, transformer_index)
 
     def set_model_attn1_output_patch(self, patch):
         self.set_model_patch(patch, "attn1_output_patch")
