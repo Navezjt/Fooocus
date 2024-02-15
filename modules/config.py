@@ -17,9 +17,16 @@ always_save_keys = []
 visited_keys = []
 
 try:
+    with open(os.path.abspath(f'./presets/default.json'), "r", encoding="utf-8") as json_file:
+        config_dict.update(json.load(json_file))
+except Exception as e:
+    print(f'Load default preset failed.')
+    print(e)
+
+try:
     if os.path.exists(config_path):
         with open(config_path, "r", encoding="utf-8") as json_file:
-            config_dict = json.load(json_file)
+            config_dict.update(json.load(json_file))
             always_save_keys = list(config_dict.keys())
 except Exception as e:
     print(f'Failed to load config file "{config_path}" . The reason is: {str(e)}')
@@ -79,13 +86,6 @@ def try_load_deprecated_user_path_config():
 
 try_load_deprecated_user_path_config()
 
-try:
-    with open(os.path.abspath(f'./presets/default.json'), "r", encoding="utf-8") as json_file:
-        config_dict.update(json.load(json_file))
-except Exception as e:
-    print(f'Load default preset failed.')
-    print(e)
-
 preset = args_manager.args.preset
 
 if isinstance(preset, str):
@@ -100,6 +100,18 @@ if isinstance(preset, str):
     except Exception as e:
         print(f'Load preset [{preset_path}] failed')
         print(e)
+
+
+def get_path_output() -> str:
+    """
+    Checking output path argument and overriding default path.
+    """
+    global config_dict
+    path_output = get_dir_or_set_default('path_outputs', '../outputs/')
+    if args_manager.args.output_path:
+        print(f'[CONFIG] Overriding config value path_outputs with {args_manager.args.output_path}')
+        config_dict['path_outputs'] = path_output = args_manager.args.output_path
+    return path_output
 
 
 def get_dir_or_set_default(key, default_value):
@@ -132,7 +144,7 @@ path_inpaint = get_dir_or_set_default('path_inpaint', '../models/inpaint/')
 path_controlnet = get_dir_or_set_default('path_controlnet', '../models/controlnet/')
 path_clip_vision = get_dir_or_set_default('path_clip_vision', '../models/clip_vision/')
 path_fooocus_expansion = get_dir_or_set_default('path_fooocus_expansion', '../models/prompt_expansion/fooocus_expansion')
-path_outputs = get_dir_or_set_default('path_outputs', '../outputs/')
+path_outputs = get_path_output()
 
 
 def get_config_item_or_set_default(key, default_value, validator, disable_empty_as_none=False):
